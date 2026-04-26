@@ -1,0 +1,10 @@
+# Mengabaikan file rahasia
+.env
+
+# Mengabaikan file hasil build (terutama di Windows agar bebas dari Windows Defender)
+*.exe
+/tiara-backend
+/tiara-backend.exe
+
+# Mengabaikan folder sementara jika ada
+/tmp
