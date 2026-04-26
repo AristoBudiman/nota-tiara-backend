@@ -24,7 +24,8 @@ var jwtSecret []byte
 func connectDB() {
 	err := godotenv.Load()
 	if err != nil {
-		log.Fatal("Error loading .env file")
+		// Gunakan Println agar aplikasi tetap lanjut menyala menggunakan Env Render
+		log.Println("Info: File .env fisik tidak ditemukan, menggunakan Environment Variables dari sistem Cloud.")
 	}
 
 	jwtSecret = []byte(os.Getenv("JWT_SECRET"))
