@@ -1,0 +1,16 @@
+FROM golang:1.25-alpine
+
+# Install Air untuk live-reloading lokal
+RUN go install github.com/cosmtrek/air@v1.49.0
+
+WORKDIR /app
+
+# Copy dependency
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy semua kode
+COPY . .
+
+# Jalankan watcher Air
+CMD ["air"]

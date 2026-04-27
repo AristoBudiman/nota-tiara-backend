@@ -66,6 +66,12 @@ type Nota struct {
 	JumlahRetur float64 `gorm:"default:0"` // Total harga retur (Semua barang)
 	TotalBayar  float64 `gorm:"default:0"` // JumlahKirim - JumlahRetur
 
+	// --- PELACAK SALES ---
+	CreatedBy  uint      `json:"created_by"`
+	AssignedTo uint      `json:"assigned_to"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+
 	Status  string `gorm:"default:'KIRIM'"` // 'KIRIM' atau 'SELESAI'
 	Details []NotaDetail
 }
@@ -106,10 +112,19 @@ type RekapToko struct {
 	Persentase float64 `json:"persentase"`
 }
 
+type RekapBarang struct {
+	Nama       string  `json:"nama"`
+	QtyKirim   float64 `json:"qty_kirim"`
+	QtyRetur   float64 `json:"qty_retur"`
+	QtyLaku    float64 `json:"qty_laku"`
+	Persentase float64 `json:"persentase"`
+}
+
 type RangkumanResponse struct {
-	Kirim      float64     `json:"kirim"`
-	Retur      float64     `json:"retur"`
-	Pendapatan float64     `json:"pendapatan"`
-	Persentase float64     `json:"persentase"`
-	PerToko    []RekapToko `json:"perToko"`
+	Kirim      float64       `json:"kirim"`
+	Retur      float64       `json:"retur"`
+	Pendapatan float64       `json:"pendapatan"`
+	Persentase float64       `json:"persentase"`
+	PerToko    []RekapToko   `json:"perToko"`
+	PerBarang  []RekapBarang `json:"perBarang"`
 }

@@ -66,14 +66,30 @@ func connectDB() {
 	// Buat Akun Super Admin Default jika tabel kosong
 	var count int64
 	DB.Model(&models.Admin{}).Count(&count)
-	if count == 0 {
-		hashedPassword, _ := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
+	// 1. Cek & Buat Super Admin
+	var adminAccount models.Admin
+	if err := DB.Where("username = ?", "admin").First(&adminAccount).Error; err != nil {
+		// Jika tidak ditemukan, baru buat
+		hashedAdmin, _ := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
 		DB.Create(&models.Admin{
 			Username: "admin",
-			Password: string(hashedPassword),
+			Password: string(hashedAdmin),
 			Role:     "superadmin",
 		})
-		log.Println("✅ Akun Super Admin default berhasil dibuat! (User: admin | Pass: admin123)")
+		log.Println("✅ Akun Super Admin 'admin' siap!")
+	}
+
+	// 2. Cek & Buat Akun Sales
+	var salesAccount models.Admin
+	if err := DB.Where("username = ?", "sales1").First(&salesAccount).Error; err != nil {
+		// Jika sales1 belum ada, buatkan otomatis
+		hashedSales, _ := bcrypt.GenerateFromPassword([]byte("sales123"), bcrypt.DefaultCost)
+		DB.Create(&models.Admin{
+			Username: "sales1",
+			Password: string(hashedSales),
+			Role:     "sales", // <--- UBAH JADI sales
+		})
+		log.Println("✅ Akun Sales 'sales1' siap!")
 	}
 }
 
@@ -112,27 +128,29 @@ func LoginAdmin(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"message": "Login sukses",
 		"token":   tokenString,
+		"role":    admin.Role, // <--- Wajib dikirim
 	})
 }
 
 func Protected(c *fiber.Ctx) error {
-	// Ambil header Authorization: Bearer <token>
 	authHeader := c.Get("Authorization")
 	if authHeader == "" || len(authHeader) < 8 {
 		return c.Status(401).JSON(fiber.Map{"error": "Akses ditolak. Token tidak ada."})
 	}
-
-	tokenString := authHeader[7:] // Potong tulisan "Bearer "
-
+	tokenString := authHeader[7:]
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		return jwtSecret, nil
 	})
-
 	if err != nil || !token.Valid {
 		return c.Status(401).JSON(fiber.Map{"error": "Token tidak valid atau sudah kedaluwarsa"})
 	}
 
-	return c.Next() // Lanjut ke fungsi asli
+	// BARU: Ekstrak data diri dan simpan di memori lokal request
+	claims := token.Claims.(jwt.MapClaims)
+	c.Locals("admin_id", uint(claims["admin_id"].(float64)))
+	c.Locals("role", claims["role"].(string))
+
+	return c.Next()
 }
 
 func CreateNota(c *fiber.Ctx) error {
@@ -140,6 +158,8 @@ func CreateNota(c *fiber.Ctx) error {
 		NoNota       string `json:"no_nota"`
 		TokoID       uint   `json:"toko_id"`
 		TanggalKirim string `json:"tanggal_kirim"`
+		AssignedTo   uint   `json:"assigned_to"`
+		Status       string `json:"status"`
 		Details      []struct {
 			BarangID    uint `json:"barang_id"`
 			BanyakKirim int  `json:"banyak_kirim"`
@@ -183,14 +203,32 @@ func CreateNota(c *fiber.Ctx) error {
 		}
 	}
 
+	adminID := c.Locals("admin_id").(uint) // Ambil ID dari token
+	role := c.Locals("role").(string)      // Ambil role yang sedang login
+
+	// --- LOGIKA OTOMATIS ASSIGNED ---
+	var assignedTo uint = input.AssignedTo
+	if role == "sales" {
+		// Jika yang buat sales, dia otomatis jadi penanggung jawab (AssignedTo)
+		assignedTo = adminID
+	}
+
+	// --- LOGIKA STATUS AWAL ---
+	statusAwal := "KIRIM"
+	if input.Status != "" {
+		statusAwal = input.Status
+	}
+
 	nota := models.Nota{
 		NoNota:           input.NoNota,
 		TokoID:           input.TokoID,
 		TanggalKirim:     tgl,
-		Status:           "KIRIM",
+		Status:           statusAwal,
 		NamaTokoSnapshot: toko.NamaToko,
 		SiklusSnapshot:   siklusAktif, // Terkunci rapi sesuai jadwal kirim
 		IsHarianSnapshot: toko.IsHarian,
+		CreatedBy:        adminID, // <--- Catat siapa yang membuat
+		AssignedTo:       assignedTo,
 	}
 
 	var totalKirim float64
@@ -219,47 +257,12 @@ func CreateNota(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Nota berhasil dibuat!", "id": nota.ID})
 }
 
-// func UpdateNota(c *fiber.Ctx) error {
-// 	id := c.Params("id")
-// 	var input struct {
-// 		Details []struct {
-// 			ID          uint `json:"id"`
-// 			BanyakRetur int  `json:"banyak_retur"`
-// 		} `json:"details"`
-// 	}
-// 	if err := c.BodyParser(&input); err != nil {
-// 		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
-// 	}
-
-// 	for _, d := range input.Details {
-// 		// Cari detail spesifik berdasarkan ID-nya
-// 		var detail models.NotaDetail
-// 		if err := DB.First(&detail, d.ID).Error; err == nil {
-// 			hRetur := float64(d.BanyakRetur) * detail.HargaJual
-// 			DB.Model(&detail).Updates(map[string]interface{}{
-// 				"banyak_retur": d.BanyakRetur,
-// 				"harga_retur":  hRetur,
-// 			})
-// 		}
-// 	}
-
-// 	// Hitung ulang total di Header Nota
-// 	var totalKirim, totalRetur float64
-// 	DB.Model(&models.NotaDetail{}).Where("nota_id = ?", id).Select("SUM(harga_kirim)").Row().Scan(&totalKirim)
-// 	DB.Model(&models.NotaDetail{}).Where("nota_id = ?", id).Select("SUM(harga_retur)").Row().Scan(&totalRetur)
-
-// 	DB.Model(&models.Nota{}).Where("id = ?", id).Updates(map[string]interface{}{
-// 		"jumlah_retur": totalRetur,
-// 		"total_bayar":  totalKirim - totalRetur,
-// 	})
-
-// 	return c.JSON(fiber.Map{"message": "Retur berhasil disimpan!"})
-// }
-
 func UpdateNota(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var input struct {
-		Details []struct {
+		AssignedTo uint   `json:"assigned_to"`
+		Status     string `json:"status"`
+		Details    []struct {
 			ID          uint    `json:"id"`
 			BarangID    uint    `json:"barang_id"`
 			BanyakRetur int     `json:"banyak_retur"`
@@ -315,9 +318,12 @@ func UpdateNota(c *fiber.Ctx) error {
 	DB.Model(&models.Nota{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"jumlah_retur": totalRetur,
 		"total_bayar":  totalKirim - totalRetur,
+		// "status":       "SELESAI",        // <--- Gembok Nota
+		"assigned_to": input.AssignedTo, // <--- Hapus tugas jika ini dari Superadmin
+		"status":      input.Status,
 	})
 
-	return c.JSON(fiber.Map{"message": "Retur berhasil diperbarui!"})
+	return c.JSON(fiber.Map{"message": "Nota berhasil diupdate!"})
 }
 
 func GetCatatanBesar(c *fiber.Ctx) error {
@@ -403,6 +409,33 @@ func GetNotaByID(c *fiber.Ctx) error {
 		return c.Status(404).JSON(fiber.Map{"error": "Nota tidak ditemukan"})
 	}
 	return c.JSON(nota)
+}
+
+// API 1: Mengambil Nota yang baru dibuat (8 Jam) & Tugas Khusus
+func GetDashboardSales(c *fiber.Ctx) error {
+	adminID := c.Locals("admin_id").(uint)
+	var notaAktif []models.Nota
+	var notaTugas []models.Nota
+
+	// Nota Aktif: 8 jam terakhir, status bebas
+	DB.Preload("Toko").Where("created_by = ? AND created_at >= ?", adminID, time.Now().Add(-8*time.Hour)).Order("id desc").Find(&notaAktif)
+
+	// Tugas Khusus dari Superadmin
+	DB.Preload("Toko").Where("assigned_to = ? AND (jumlah_retur = 0 OR updated_at > ?)", adminID, time.Now().Add(-12*time.Hour)).Order("id desc").Find(&notaTugas)
+
+	return c.JSON(fiber.Map{"aktif": notaAktif, "tugas": notaTugas})
+}
+
+// API 2: Memeriksa tagihan Retur saat tiba di toko
+func GetKunjunganToko(c *fiber.Ctx) error {
+	tokoID := c.Params("toko_id")
+	var notaBelumRetur []models.Nota
+
+	// PERBAIKAN: Tambahkan "AND jumlah_retur = 0" di dalam Where
+	DB.Preload("Toko").Where("toko_id = ? AND status = 'KIRIM' AND jumlah_retur = 0 AND tanggal_kirim >= ?",
+		tokoID, time.Now().AddDate(0, -1, 0)).Order("tanggal_kirim asc").Find(&notaBelumRetur)
+
+	return c.JSON(notaBelumRetur)
 }
 
 // --- FUNGSI CRUD TOKO ---
@@ -591,12 +624,62 @@ func GetRangkuman(c *fiber.Ctx) error {
 		totalPersentase = (totalRetur / totalKirim) * 100
 	}
 
+	var rawBarang []struct {
+		Nama  string
+		Kirim float64
+		Retur float64
+	}
+
+	queryBarang := `
+		SELECT 
+			MAX(nota_details.nama_barang_snapshot) as nama,
+			COALESCE(SUM(CASE WHEN nota.tanggal_kirim >= CAST(? AS DATE) AND nota.tanggal_kirim <= CAST(? AS DATE) THEN nota_details.banyak_kirim ELSE 0 END), 0) as kirim,
+			COALESCE(SUM(CASE 
+				WHEN nota.siklus_snapshot = 'HARIAN' AND nota.tanggal_kirim >= CAST(? AS DATE) AND nota.tanggal_kirim <= CAST(? AS DATE) THEN nota_details.banyak_retur
+				WHEN nota.siklus_snapshot != 'HARIAN' AND (nota.tanggal_kirim + INTERVAL '4 days') >= CAST(? AS DATE) AND (nota.tanggal_kirim + INTERVAL '4 days') <= CAST(? AS DATE) THEN nota_details.banyak_retur
+				ELSE 0 
+			END), 0) as retur
+		FROM nota_details
+		JOIN nota ON nota.id = nota_details.nota_id
+		WHERE nota.tanggal_kirim >= CAST(? AS DATE) - INTERVAL '4 days' AND nota.tanggal_kirim <= CAST(? AS DATE)
+		GROUP BY nota_details.barang_id
+	`
+
+	if err := DB.Raw(queryBarang, startDate, endDate, startDate, endDate, startDate, endDate, startDate, endDate).Scan(&rawBarang).Error; err != nil {
+		fmt.Println("❌ ERROR SQL RANGKUMAN BARANG:", err.Error())
+	}
+
+	var perBarang []models.RekapBarang
+	for _, b := range rawBarang {
+		if b.Kirim == 0 && b.Retur == 0 {
+			continue // Lewati barang yang tidak ada transaksi
+		}
+		persen := 0.0
+		if b.Kirim > 0 {
+			persen = (b.Retur / b.Kirim) * 100
+		}
+		perBarang = append(perBarang, models.RekapBarang{
+			Nama:       b.Nama,
+			QtyKirim:   b.Kirim,
+			QtyRetur:   b.Retur,
+			QtyLaku:    b.Kirim - b.Retur,
+			Persentase: persen,
+		})
+	}
+
+	// Urutkan barang dari yang paling laku
+	sort.Slice(perBarang, func(i, j int) bool {
+		return perBarang[i].QtyLaku > perBarang[j].QtyLaku
+	})
+
+	// --- UBAH RETURN DI BAGIAN PALING BAWAH ---
 	return c.JSON(models.RangkumanResponse{
 		Kirim:      totalKirim,
 		Retur:      totalRetur,
 		Pendapatan: totalKirim - totalRetur,
 		Persentase: totalPersentase,
 		PerToko:    perToko,
+		PerBarang:  perBarang,
 	})
 }
 
@@ -618,6 +701,15 @@ func main() {
 	// Kelompokkan rute yang butuh login
 	api := app.Group("/api", Protected)
 
+	api.Get("/admins", func(c *fiber.Ctx) error {
+		var admins []models.Admin
+		// Ambil semua admin, lalu kirim ke Vue
+		if err := DB.Find(&admins).Error; err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(admins)
+	})
+
 	api.Get("/tokos", GetTokos)
 	api.Post("/tokos", CreateToko)
 
@@ -636,6 +728,8 @@ func main() {
 	api.Put("/tokos/:id", UpdateToko)
 	api.Delete("/tokos/:id", DeleteToko)
 	api.Get("/rangkuman", GetRangkuman)
+	api.Get("/sales/dashboard", GetDashboardSales)
+	api.Get("/sales/kunjungan/:toko_id", GetKunjunganToko)
 
 	appPort := os.Getenv("PORT")
 	if appPort == "" {
