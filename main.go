@@ -7,6 +7,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -21,6 +22,7 @@ import (
 var DB *gorm.DB
 var jwtSecret []byte
 
+// KONEKSI KE DB
 func connectDB() {
 	err := godotenv.Load()
 	if err != nil {
@@ -36,7 +38,7 @@ func connectDB() {
 	dbname := os.Getenv("DB_NAME")
 	port := os.Getenv("DB_PORT")
 
-	// Ambil setting SSL dari .env, kalau kosong anggap disable (untuk lokal lama)
+	// Ambil setting SSL dari .env, kalau kosong anggap disable (untuk development)
 	ssl := os.Getenv("DB_SSL")
 	if ssl == "" {
 		ssl = "disable"
@@ -63,36 +65,73 @@ func connectDB() {
 	)
 	log.Println("Database & Tabel Berhasil Disiapkan! 🏗️")
 
-	// Buat Akun Super Admin Default jika tabel kosong
-	var count int64
-	DB.Model(&models.Admin{}).Count(&count)
-	// 1. Cek & Buat Super Admin
-	var adminAccount models.Admin
-	if err := DB.Where("username = ?", "admin").First(&adminAccount).Error; err != nil {
-		// Jika tidak ditemukan, baru buat
-		hashedAdmin, _ := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
-		DB.Create(&models.Admin{
-			Username: "admin",
-			Password: string(hashedAdmin),
-			Role:     "superadmin",
-		})
-		log.Println("✅ Akun Super Admin 'admin' siap!")
+	// // 1. Cek & Buat Super Admin
+	// var adminAccount models.Admin
+	// if err := DB.Where("username = ?", "admin").First(&adminAccount).Error; err != nil {
+	// 	// Jika tidak ditemukan, baru buat
+	// 	hashedAdmin, _ := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
+	// 	DB.Create(&models.Admin{
+	// 		Username: "admin",
+	// 		Password: string(hashedAdmin),
+	// 		Role:     "superadmin",
+	// 	})
+	// 	log.Println("✅ Akun Super Admin 'admin' siap!")
+	// }
+
+	// // 2. Cek & Buat Akun Sales
+	// var salesAccount models.Admin
+	// if err := DB.Where("username = ?", "sales1").First(&salesAccount).Error; err != nil {
+	// 	// Jika sales1 belum ada, buatkan otomatis
+	// 	hashedSales, _ := bcrypt.GenerateFromPassword([]byte("sales123"), bcrypt.DefaultCost)
+	// 	DB.Create(&models.Admin{
+	// 		Username: "sales1",
+	// 		Password: string(hashedSales),
+	// 		Role:     "sales", // <--- UBAH JADI sales
+	// 	})
+	// 	log.Println("✅ Akun Sales 'sales1' siap!")
+	// }
+
+	// 1. Cek & Buat Super Admin dari .env
+	adminUser := os.Getenv("ADMIN_USER")
+	adminPass := os.Getenv("ADMIN_PASS")
+
+	// Pastikan ENV tidak kosong sebelum membuat akun!
+	if adminUser != "" && adminPass != "" {
+		var adminAccount models.Admin
+		if err := DB.Where("username = ?", adminUser).First(&adminAccount).Error; err != nil {
+			hashedAdmin, _ := bcrypt.GenerateFromPassword([]byte(adminPass), bcrypt.DefaultCost)
+			DB.Create(&models.Admin{
+				Username: adminUser,
+				Password: string(hashedAdmin),
+				Role:     "superadmin",
+			})
+			log.Println("✅ Akun Super Admin siap!")
+		}
+	} else {
+		log.Println("⚠️ PERINGATAN: ADMIN_USER atau ADMIN_PASS di .env kosong! Tidak membuat akun Superadmin.")
 	}
 
-	// 2. Cek & Buat Akun Sales
-	var salesAccount models.Admin
-	if err := DB.Where("username = ?", "sales1").First(&salesAccount).Error; err != nil {
-		// Jika sales1 belum ada, buatkan otomatis
-		hashedSales, _ := bcrypt.GenerateFromPassword([]byte("sales123"), bcrypt.DefaultCost)
-		DB.Create(&models.Admin{
-			Username: "sales1",
-			Password: string(hashedSales),
-			Role:     "sales", // <--- UBAH JADI sales
-		})
-		log.Println("✅ Akun Sales 'sales1' siap!")
+	// 2. Cek & Buat Akun Sales dari .env
+	salesUser := os.Getenv("SALES_USER")
+	salesPass := os.Getenv("SALES_PASS")
+
+	if salesUser != "" && salesPass != "" {
+		var salesAccount models.Admin
+		if err := DB.Where("username = ?", salesUser).First(&salesAccount).Error; err != nil {
+			hashedSales, _ := bcrypt.GenerateFromPassword([]byte(salesPass), bcrypt.DefaultCost)
+			DB.Create(&models.Admin{
+				Username: salesUser,
+				Password: string(hashedSales),
+				Role:     "sales",
+			})
+			log.Println("✅ Akun Sales siap!")
+		}
+	} else {
+		log.Println("⚠️ PERINGATAN: SALES_USER atau SALES_PASS di .env kosong! Tidak membuat akun Sales.")
 	}
 }
 
+// LOGIN
 func LoginAdmin(c *fiber.Ctx) error {
 	var input struct {
 		Username string `json:"username"`
@@ -128,7 +167,7 @@ func LoginAdmin(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"message": "Login sukses",
 		"token":   tokenString,
-		"role":    admin.Role, // <--- Wajib dikirim
+		"role":    admin.Role,
 	})
 }
 
@@ -151,6 +190,28 @@ func Protected(c *fiber.Ctx) error {
 	c.Locals("role", claims["role"].(string))
 
 	return c.Next()
+}
+
+// BUAT NOTA
+func GetNextNotaNumber(c *fiber.Ctx) error {
+	tokoID := c.Query("toko_id")
+	tgl := c.Query("tanggal") // Format: 2026-04-27
+
+	// Hilangkan tanda strip pada tanggal: 2026-04-27 -> 20260427
+	tglStr := strings.ReplaceAll(tgl, "-", "")
+
+	var count int64
+	// Gunakan Unscoped agar nota yang dibatalkan/dihapus tetap terhitung
+	// sehingga nomornya tidak akan mundur / dipakai ulang
+	DB.Unscoped().Model(&models.Nota{}).Where("toko_id = ?", tokoID).Count(&count)
+
+	nextUrutan := count + 1
+
+	// Format: NT/20260427/1-0001
+	// %04d berarti angka akan diformat menjadi 4 digit (0001)
+	noNota := fmt.Sprintf("NT/%s/%s-%04d", tglStr, tokoID, nextUrutan)
+
+	return c.JSON(fiber.Map{"no_nota": noNota})
 }
 
 func CreateNota(c *fiber.Ctx) error {
@@ -178,13 +239,12 @@ func CreateNota(c *fiber.Ctx) error {
 	tgl, _ := time.Parse("2006-01-02", input.TanggalKirim)
 	hari := tgl.Weekday()
 
-	// 2. Logika Penentuan Siklus Snapshot
+	// Logika Penentuan Siklus Snapshot
 	var siklusAktif string
 
 	if toko.IsHarian {
 		siklusAktif = "HARIAN"
 	} else {
-		// Menggunakan Switch Condition untuk Toko Reguler
 		switch {
 		case hari == time.Thursday && toko.SiklusKamisSenin:
 			siklusAktif = "SiklusKamisSenin"
@@ -206,14 +266,14 @@ func CreateNota(c *fiber.Ctx) error {
 	adminID := c.Locals("admin_id").(uint) // Ambil ID dari token
 	role := c.Locals("role").(string)      // Ambil role yang sedang login
 
-	// --- LOGIKA OTOMATIS ASSIGNED ---
+	// LOGIKA OTOMATIS ASSIGNED
 	var assignedTo uint = input.AssignedTo
 	if role == "sales" {
 		// Jika yang buat sales, dia otomatis jadi penanggung jawab (AssignedTo)
 		assignedTo = adminID
 	}
 
-	// --- LOGIKA STATUS AWAL ---
+	// LOGIKA STATUS AWAL
 	statusAwal := "KIRIM"
 	if input.Status != "" {
 		statusAwal = input.Status
@@ -225,9 +285,9 @@ func CreateNota(c *fiber.Ctx) error {
 		TanggalKirim:     tgl,
 		Status:           statusAwal,
 		NamaTokoSnapshot: toko.NamaToko,
-		SiklusSnapshot:   siklusAktif, // Terkunci rapi sesuai jadwal kirim
+		SiklusSnapshot:   siklusAktif,
 		IsHarianSnapshot: toko.IsHarian,
-		CreatedBy:        adminID, // <--- Catat siapa yang membuat
+		CreatedBy:        adminID,
 		AssignedTo:       assignedTo,
 	}
 
@@ -285,7 +345,7 @@ func UpdateNota(c *fiber.Ctx) error {
 			})
 		} else if d.BanyakRetur > 0 {
 			// Kasus 2: Detail belum ada (Toko Harian retur barang yang tidak dikirim hari itu)
-			// Kita harus buat baris baru di nota_details
+			// harus buat baris baru di nota_details
 			var barang models.Barang
 			DB.First(&barang, d.BarangID)
 
@@ -295,7 +355,7 @@ func UpdateNota(c *fiber.Ctx) error {
 			}
 
 			newDetail := models.NotaDetail{
-				NotaID:             uint(parsedID), // Pastikan ID Nota benar
+				NotaID:             uint(parsedID),
 				BarangID:           d.BarangID,
 				NamaBarangSnapshot: barang.NamaBarang,
 				BanyakKirim:        0,
@@ -312,20 +372,31 @@ func UpdateNota(c *fiber.Ctx) error {
 	var totalKirim, totalRetur float64
 	DB.Model(&models.NotaDetail{}).Where("nota_id = ?", id).Select("COALESCE(SUM(harga_kirim), 0)").Row().Scan(&totalKirim)
 	DB.Model(&models.NotaDetail{}).Where("nota_id = ?", id).Select("COALESCE(SUM(harga_retur), 0)").Row().Scan(&totalRetur)
-	// DB.Model(&models.NotaDetail{}).Where("nota_id = ?", id).Select("SUM(harga_kirim)").Row().Scan(&totalKirim)
-	// DB.Model(&models.NotaDetail{}).Where("nota_id = ?", id).Select("SUM(harga_retur)").Row().Scan(&totalRetur)
 
 	DB.Model(&models.Nota{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"jumlah_retur": totalRetur,
 		"total_bayar":  totalKirim - totalRetur,
-		// "status":       "SELESAI",        // <--- Gembok Nota
-		"assigned_to": input.AssignedTo, // <--- Hapus tugas jika ini dari Superadmin
-		"status":      input.Status,
+		"assigned_to":  input.AssignedTo,
+		"status":       input.Status,
 	})
 
 	return c.JSON(fiber.Map{"message": "Nota berhasil diupdate!"})
 }
 
+func GetProfilTiara(c *fiber.Ctx) error {
+	var profil models.ProfilTiara
+	// Ambil data profil pertama yang ada di database
+	if err := DB.First(&profil).Error; err != nil {
+		// Jika belum ada data di DB, kirim data default agar tidak error
+		return c.JSON(models.ProfilTiara{
+			Nama:   "TIARA NOTA",
+			Alamat: "Alamat belum diatur",
+		})
+	}
+	return c.JSON(profil)
+}
+
+// CATATAN BESAR
 func GetCatatanBesar(c *fiber.Ctx) error {
 	siklus := c.Query("siklus")
 	var results []struct {
@@ -353,17 +424,15 @@ func GetCatatanBesar(c *fiber.Ctx) error {
 	return c.JSON(results)
 }
 
+// MASTER BARANG
 func GetBarangs(c *fiber.Ctx) error {
 	var barangs []models.Barang
-	// UBAH DI SINI: Tambahkan .Order() agar posisinya terkunci permanen!
-	// Jika urutannya sama (0), akan diurutkan dari ID paling lama.
 	if err := DB.Order("urutan asc, id asc").Find(&barangs).Error; err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.JSON(barangs)
 }
 
-// FUNGSI BARU UNTUK MENYIMPAN URUTAN PLAYLIST
 func UpdateUrutanBarang(c *fiber.Ctx) error {
 	var input []struct {
 		ID     uint `json:"id"`
@@ -382,83 +451,6 @@ func UpdateUrutanBarang(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Urutan barang berhasil diperbarui!"})
 }
 
-func GetTokos(c *fiber.Ctx) error {
-	var tokos []models.Toko
-	if err := DB.Find(&tokos).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
-	return c.JSON(tokos)
-}
-
-func GetNotas(c *fiber.Ctx) error {
-	var notas []models.Nota
-	// Gunakan "id desc" agar nota yang baru dibuat muncul paling atas
-	if err := DB.Preload("Toko").Preload("Details").Preload("Details.Barang").Order("id desc").Find(&notas).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
-	return c.JSON(notas)
-}
-
-func GetNotaByID(c *fiber.Ctx) error {
-	id := c.Params("id")
-	var nota models.Nota
-	// Tambahkan .Order("id ASC") pada Preload Details
-	if err := DB.Preload("Toko").Preload("Details", func(db *gorm.DB) *gorm.DB {
-		return db.Order("nota_details.id ASC")
-	}).First(&nota, id).Error; err != nil {
-		return c.Status(404).JSON(fiber.Map{"error": "Nota tidak ditemukan"})
-	}
-	return c.JSON(nota)
-}
-
-// API 1: Mengambil Nota yang baru dibuat (8 Jam) & Tugas Khusus
-func GetDashboardSales(c *fiber.Ctx) error {
-	adminID := c.Locals("admin_id").(uint)
-	var notaAktif []models.Nota
-	var notaTugas []models.Nota
-
-	// Nota Aktif: 8 jam terakhir, status bebas
-	DB.Preload("Toko").Where("created_by = ? AND created_at >= ?", adminID, time.Now().Add(-8*time.Hour)).Order("id desc").Find(&notaAktif)
-
-	// Tugas Khusus dari Superadmin
-	DB.Preload("Toko").Where("assigned_to = ? AND (jumlah_retur = 0 OR updated_at > ?)", adminID, time.Now().Add(-12*time.Hour)).Order("id desc").Find(&notaTugas)
-
-	return c.JSON(fiber.Map{"aktif": notaAktif, "tugas": notaTugas})
-}
-
-// API 2: Memeriksa tagihan Retur saat tiba di toko
-func GetKunjunganToko(c *fiber.Ctx) error {
-	tokoID := c.Params("toko_id")
-	var notaBelumRetur []models.Nota
-
-	// PERBAIKAN: Tambahkan "AND jumlah_retur = 0" di dalam Where
-	DB.Preload("Toko").Where("toko_id = ? AND status = 'KIRIM' AND jumlah_retur = 0 AND tanggal_kirim >= ?",
-		tokoID, time.Now().AddDate(0, -1, 0)).Order("tanggal_kirim asc").Find(&notaBelumRetur)
-
-	return c.JSON(notaBelumRetur)
-}
-
-// --- FUNGSI CRUD TOKO ---
-func CreateToko(c *fiber.Ctx) error {
-	var input models.Toko
-	if err := c.BodyParser(&input); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
-	}
-	if err := DB.Create(&input).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
-	return c.JSON(input)
-}
-
-func DeleteToko(c *fiber.Ctx) error {
-	id := c.Params("id")
-	if err := DB.Delete(&models.Toko{}, id).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
-	return c.JSON(fiber.Map{"message": "Toko berhasil dihapus"})
-}
-
-// --- FUNGSI CRUD BARANG ---
 func CreateBarang(c *fiber.Ctx) error {
 	var input models.Barang
 	if err := c.BodyParser(&input); err != nil {
@@ -470,43 +462,6 @@ func CreateBarang(c *fiber.Ctx) error {
 	return c.JSON(input)
 }
 
-func DeleteBarang(c *fiber.Ctx) error {
-	id := c.Params("id")
-	if err := DB.Delete(&models.Barang{}, id).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
-	return c.JSON(fiber.Map{"message": "Barang berhasil dihapus"})
-}
-
-// --- FUNGSI UPDATE TOKO ---
-func UpdateToko(c *fiber.Ctx) error {
-	id := c.Params("id")
-	var input models.Toko
-
-	if err := c.BodyParser(&input); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
-	}
-
-	var toko models.Toko
-	if err := DB.First(&toko, id).Error; err != nil {
-		return c.Status(404).JSON(fiber.Map{"error": "Toko tidak ditemukan"})
-	}
-
-	// PERBAIKAN: Gunakan Map agar nilai 'false' tetap terbaca dan di-update ke database
-	DB.Model(&toko).Updates(map[string]interface{}{
-		"nama_toko":           input.NamaToko,
-		"no_telp":             input.NoTelp,
-		"alamat":              input.Alamat,
-		"siklus_kamis_senin":  input.SiklusKamisSenin,
-		"siklus_jumat_selasa": input.SiklusJumatSelasa,
-		"siklus_sabtu_rabu":   input.SiklusSabtuRabu,
-		"is_harian":           input.IsHarian,
-	})
-
-	return c.JSON(fiber.Map{"message": "Toko berhasil diupdate", "data": toko})
-}
-
-// --- FUNGSI UPDATE BARANG ---
 func UpdateBarang(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var input models.Barang
@@ -526,6 +481,89 @@ func UpdateBarang(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Barang berhasil diupdate", "data": barang})
 }
 
+func DeleteBarang(c *fiber.Ctx) error {
+	id := c.Params("id")
+	if err := DB.Delete(&models.Barang{}, id).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"message": "Barang berhasil dihapus"})
+}
+
+// MASTER TOKO
+func GetTokos(c *fiber.Ctx) error {
+	var tokos []models.Toko
+	if err := DB.Find(&tokos).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(tokos)
+}
+
+func CreateToko(c *fiber.Ctx) error {
+	var input models.Toko
+	if err := c.BodyParser(&input); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+	}
+	if err := DB.Create(&input).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(input)
+}
+
+func UpdateToko(c *fiber.Ctx) error {
+	id := c.Params("id")
+	var input models.Toko
+
+	if err := c.BodyParser(&input); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	var toko models.Toko
+	if err := DB.First(&toko, id).Error; err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Toko tidak ditemukan"})
+	}
+
+	DB.Model(&toko).Updates(map[string]interface{}{
+		"nama_toko":           input.NamaToko,
+		"no_telp":             input.NoTelp,
+		"alamat":              input.Alamat,
+		"siklus_kamis_senin":  input.SiklusKamisSenin,
+		"siklus_jumat_selasa": input.SiklusJumatSelasa,
+		"siklus_sabtu_rabu":   input.SiklusSabtuRabu,
+		"is_harian":           input.IsHarian,
+	})
+
+	return c.JSON(fiber.Map{"message": "Toko berhasil diupdate", "data": toko})
+}
+
+func DeleteToko(c *fiber.Ctx) error {
+	id := c.Params("id")
+	if err := DB.Delete(&models.Toko{}, id).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"message": "Toko berhasil dihapus"})
+}
+
+// RIWAYAT NOTA
+func GetNotas(c *fiber.Ctx) error {
+	var notas []models.Nota
+	if err := DB.Preload("Toko").Preload("Details").Preload("Details.Barang").Order("id desc").Find(&notas).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	} // Gunakan "id desc" agar nota yang baru dibuat muncul paling atas
+	return c.JSON(notas)
+}
+
+func GetNotaByID(c *fiber.Ctx) error {
+	id := c.Params("id")
+	var nota models.Nota
+	if err := DB.Preload("Toko").Preload("Details", func(db *gorm.DB) *gorm.DB {
+		return db.Order("nota_details.id ASC")
+	}).First(&nota, id).Error; err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Nota tidak ditemukan"})
+	}
+	return c.JSON(nota)
+}
+
+// RANGKUMAN
 func GetRangkuman(c *fiber.Ctx) error {
 	start := c.Query("start")
 	end := c.Query("end")
@@ -672,7 +710,6 @@ func GetRangkuman(c *fiber.Ctx) error {
 		return perBarang[i].QtyLaku > perBarang[j].QtyLaku
 	})
 
-	// --- UBAH RETURN DI BAGIAN PALING BAWAH ---
 	return c.JSON(models.RangkumanResponse{
 		Kirim:      totalKirim,
 		Retur:      totalRetur,
@@ -683,6 +720,88 @@ func GetRangkuman(c *fiber.Ctx) error {
 	})
 }
 
+func GetRangkumanPerToko(c *fiber.Ctx) error {
+	start := c.Query("start")
+	end := c.Query("end")
+	tokoID := c.Query("toko_id")
+
+	var hasil []struct {
+		NamaBarang string `json:"nama_barang"`
+		TotalKirim int    `json:"total_kirim"`
+		TotalRetur int    `json:"total_retur"`
+		TotalLaku  int    `json:"total_laku"`
+	}
+
+	query := `
+		SELECT 
+			nota_details.nama_barang_snapshot as nama_barang, 
+			SUM(nota_details.banyak_kirim) as total_kirim, 
+			SUM(nota_details.banyak_retur) as total_retur, 
+			SUM(nota_details.banyak_kirim - nota_details.banyak_retur) as total_laku
+		FROM nota_details
+		JOIN nota ON nota.id = nota_details.nota_id
+		WHERE nota.tanggal_kirim >= CAST(? AS DATE) AND nota.tanggal_kirim <= CAST(? AS DATE)
+		AND nota.toko_id = ?
+		GROUP BY nota_details.nama_barang_snapshot
+		ORDER BY total_laku DESC
+	`
+	DB.Raw(query, start, end, tokoID).Scan(&hasil)
+
+	return c.JSON(hasil)
+}
+
+// SAMPAH
+func GetTrash(c *fiber.Ctx) error {
+	var tokoTerhapus []models.Toko
+	var barangTerhapus []models.Barang
+
+	DB.Unscoped().Where("deleted_at IS NOT NULL").Find(&tokoTerhapus)
+	DB.Unscoped().Where("deleted_at IS NOT NULL").Find(&barangTerhapus)
+
+	return c.JSON(fiber.Map{
+		"tokos":   tokoTerhapus,
+		"barangs": barangTerhapus,
+	})
+}
+
+func RestoreData(c *fiber.Ctx) error {
+	jenis := c.Params("type") // "toko" atau "barang"
+	id := c.Params("id")
+
+	if jenis == "toko" {
+		DB.Unscoped().Model(&models.Toko{}).Where("id = ?", id).Update("deleted_at", nil)
+	} else {
+		DB.Unscoped().Model(&models.Barang{}).Where("id = ?", id).Update("deleted_at", nil)
+	}
+	return c.JSON(fiber.Map{"message": "Data berhasil dipulihkan"})
+}
+
+// DASHBOARD KUNJUNGAN SALES
+func GetDashboardSales(c *fiber.Ctx) error { // Mengambil Nota yang baru dibuat (8 Jam) & Tugas Khusus
+	adminID := c.Locals("admin_id").(uint)
+	var notaAktif []models.Nota
+	var notaTugas []models.Nota
+
+	// Nota Aktif: 8 jam terakhir, status bebas
+	DB.Preload("Toko").Where("created_by = ? AND created_at >= ?", adminID, time.Now().Add(-8*time.Hour)).Order("id desc").Find(&notaAktif)
+
+	// Tugas Khusus dari Superadmin
+	DB.Preload("Toko").Where("assigned_to = ? AND (jumlah_retur = 0 OR updated_at > ?)", adminID, time.Now().Add(-12*time.Hour)).Order("id desc").Find(&notaTugas)
+
+	return c.JSON(fiber.Map{"aktif": notaAktif, "tugas": notaTugas})
+}
+
+func GetKunjunganToko(c *fiber.Ctx) error { // Memeriksa tagihan Retur saat tiba di toko
+	tokoID := c.Params("toko_id")
+	var notaBelumRetur []models.Nota
+
+	DB.Preload("Toko").Where("toko_id = ? AND status = 'KIRIM' AND jumlah_retur = 0 AND tanggal_kirim >= ?",
+		tokoID, time.Now().AddDate(0, -1, 0)).Order("tanggal_kirim asc").Find(&notaBelumRetur)
+
+	return c.JSON(notaBelumRetur)
+}
+
+// MAIN
 func main() {
 	connectDB()
 
@@ -710,24 +829,39 @@ func main() {
 		return c.JSON(admins)
 	})
 
-	api.Get("/tokos", GetTokos)
-	api.Post("/tokos", CreateToko)
-
+	// BARANG
 	api.Get("/barangs", GetBarangs)
-	api.Get("/tokos", GetTokos)
-	api.Get("/notas", GetNotas)
-	api.Get("/notas/:id", GetNotaByID)
-	api.Put("/notas/:id", UpdateNota)
-	api.Post("/notas", CreateNota)
-	api.Get("/catatan-besar", GetCatatanBesar)
 	api.Put("/barangs/reorder", UpdateUrutanBarang)
 	api.Post("/barangs", CreateBarang)
 	api.Put("/barangs/:id", UpdateBarang)
 	api.Delete("/barangs/:id", DeleteBarang)
+
+	// TOKO
+	api.Get("/tokos", GetTokos)
 	api.Post("/tokos", CreateToko)
 	api.Put("/tokos/:id", UpdateToko)
 	api.Delete("/tokos/:id", DeleteToko)
+
+	// NOTA
+	api.Get("/profil", GetProfilTiara)
+	api.Get("/notas/next-number", GetNextNotaNumber)
+	api.Get("/notas", GetNotas)
+	api.Get("/notas/:id", GetNotaByID)
+	api.Post("/notas", CreateNota)
+	api.Put("/notas/:id", UpdateNota)
+
+	// CATATAN BESAR
+	api.Get("/catatan-besar", GetCatatanBesar)
+
+	// RANGKUMAN
 	api.Get("/rangkuman", GetRangkuman)
+	api.Get("/rangkuman-per-toko", GetRangkumanPerToko)
+
+	// SAMPAH
+	api.Get("/sampah", GetTrash)
+	api.Put("/sampah/:type/:id", RestoreData)
+
+	// DASHBOARD KUNJUNGAN SALES
 	api.Get("/sales/dashboard", GetDashboardSales)
 	api.Get("/sales/kunjungan/:toko_id", GetKunjunganToko)
 
