@@ -456,9 +456,20 @@ func CreateBarang(c *fiber.Ctx) error {
 	if err := c.BodyParser(&input); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 	}
+
+	// Cari nilai "urutan" tertinggi di database saat ini
+	var maxUrutan int
+	// Gunakan COALESCE agar kalau databasenya kosong, dia mulai dari 0
+	DB.Model(&models.Barang{}).Select("COALESCE(MAX(urutan), 0)").Row().Scan(&maxUrutan)
+
+	// Set urutan barang baru agar otomatis jatuh di paling bawah (+1 dari yang tertinggi)
+	input.Urutan = maxUrutan + 1
+
+	// Simpan ke database
 	if err := DB.Create(&input).Error; err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
+
 	return c.JSON(input)
 }
 
