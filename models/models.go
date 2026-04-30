@@ -70,7 +70,8 @@ type Nota struct {
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
 
-	Status  string `gorm:"default:'KIRIM'"` // 'KIRIM' atau 'SELESAI'
+	Status  string `gorm:"default:'KIRIM'"`
+	IsLunas bool   `gorm:"default:false" json:"is_lunas"` // 'KIRIM' atau 'SELESAI'
 	Details []NotaDetail
 }
 
@@ -123,4 +124,51 @@ type RangkumanResponse struct {
 	Persentase float64       `json:"persentase"`
 	PerToko    []RekapToko   `json:"perToko"`
 	PerBarang  []RekapBarang `json:"perBarang"`
+}
+
+// HEADER NOTA PESANAN
+type NotaPesanan struct {
+	ID           uint      `gorm:"primaryKey"`
+	NoNota       string    `gorm:"unique;not null"`
+	NamaPemesan  string    `gorm:"not null"`
+	TanggalKirim time.Time `gorm:"type:date"`
+
+	JenisPengambilan string `gorm:"default:'PABRIK'"` // 'PABRIK' atau 'MITRA'
+
+	// Gunakan pointer (*uint) agar bisa bernilai NULL di database jika diambil di Pabrik
+	TokoID           *uint
+	Toko             Toko   `gorm:"foreignKey:TokoID"`
+	NamaTokoSnapshot string `json:"NamaTokoSnapshot"` // Catat nama toko saat itu (atau isi "PABRIK")
+
+	TotalBayar float64 `gorm:"default:0"`
+	Status     string  `gorm:"default:'BELUM DIAMBIL'"`
+	IsLunas    bool    `gorm:"default:false" json:"is_lunas"` // 'BELUM DIAMBIL' atau 'LUNAS/DIAMBIL'
+
+	AssignedTo uint      `json:"assigned_to"`
+	CreatedBy  uint      `json:"created_by"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+
+	Details []NotaPesananDetail `gorm:"foreignKey:NotaPesananID"`
+}
+
+// DETAIL BARANG PESANAN
+type NotaPesananDetail struct {
+	ID            uint `gorm:"primaryKey"`
+	NotaPesananID uint `gorm:"not null"`
+
+	// Pointer agar bisa NULL untuk barang kustom yang tidak ada di Master Barang
+	BarangID *uint
+	Barang   Barang `gorm:"foreignKey:BarangID"`
+
+	// Ini menyimpan nama barang dari DB, ATAU nama barang kustom ketikan manual (misal: "Kue Tart")
+	NamaBarangBebas string `gorm:"not null" json:"NamaBarangBebas"`
+
+	// Tambahan untuk persiapan Modul Inventory Dapur
+	ResepID *uint   `json:"resep_id"` // Bisa NULL
+	Gramasi float64 `gorm:"default:0" json:"gramasi"`
+
+	Banyak    int     `gorm:"default:0"`
+	HargaJual float64 `gorm:"not null"`
+	Subtotal  float64 `gorm:"default:0"` // Banyak * HargaJual
 }

@@ -62,6 +62,8 @@ func connectDB() {
 		&models.Nota{},
 		&models.NotaDetail{},
 		&models.Admin{},
+		&models.NotaPesanan{},
+		&models.NotaPesananDetail{},
 	)
 	log.Println("Database & Tabel Berhasil Disiapkan! 🏗️")
 
@@ -221,6 +223,7 @@ func CreateNota(c *fiber.Ctx) error {
 		TanggalKirim string `json:"tanggal_kirim"`
 		AssignedTo   uint   `json:"assigned_to"`
 		Status       string `json:"status"`
+		IsLunas      bool   `json:"is_lunas"`
 		Details      []struct {
 			BarangID    uint `json:"barang_id"`
 			BanyakKirim int  `json:"banyak_kirim"`
@@ -289,6 +292,7 @@ func CreateNota(c *fiber.Ctx) error {
 		IsHarianSnapshot: toko.IsHarian,
 		CreatedBy:        adminID,
 		AssignedTo:       assignedTo,
+		IsLunas:          input.IsLunas,
 	}
 
 	var totalKirim float64
@@ -322,6 +326,7 @@ func UpdateNota(c *fiber.Ctx) error {
 	var input struct {
 		AssignedTo uint   `json:"assigned_to"`
 		Status     string `json:"status"`
+		IsLunas    bool   `json:"is_lunas"`
 		Details    []struct {
 			ID          uint    `json:"id"`
 			BarangID    uint    `json:"barang_id"`
@@ -378,6 +383,7 @@ func UpdateNota(c *fiber.Ctx) error {
 		"total_bayar":  totalKirim - totalRetur,
 		"assigned_to":  input.AssignedTo,
 		"status":       input.Status,
+		"is_lunas":     input.IsLunas,
 	})
 
 	return c.JSON(fiber.Map{"message": "Nota berhasil diupdate!"})
@@ -574,7 +580,7 @@ func GetNotaByID(c *fiber.Ctx) error {
 	return c.JSON(nota)
 }
 
-// RANGKUMAN
+// RANGKUMAN (Logika Anchor Day / Hari Jangkar Mutlak)
 func GetRangkuman(c *fiber.Ctx) error {
 	start := c.Query("start")
 	end := c.Query("end")
@@ -583,30 +589,40 @@ func GetRangkuman(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Tanggal start dan end wajib diisi"})
 	}
 
-	startDate, errStart := time.Parse("2006-01-02", start)
-	endDate, errEnd := time.Parse("2006-01-02", end)
-	if errStart != nil || errEnd != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "Format tanggal salah"})
-	}
+	startDate, _ := time.Parse("2006-01-02", start)
+	endDate, _ := time.Parse("2006-01-02", end)
 
-	// 1. AMBIL SEMUA TOKO DARI MASTER DATA
+	// 1. AMBIL SEMUA TOKO
 	var semuaToko []models.Toko
-	if err := DB.Unscoped().Find(&semuaToko).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Gagal mengambil data master toko"})
-	}
+	DB.Unscoped().Find(&semuaToko)
 
-	// 2. BUAT KERANGKA REKAP DENGAN MAP (Semua toko di-set 0)
 	rekapMap := make(map[uint]*models.RekapToko)
 	for _, t := range semuaToko {
-		rekapMap[t.ID] = &models.RekapToko{
-			ID:         t.ID,
-			Nama:       t.NamaToko,
-			Kirim:      0,
-			Retur:      0,
-			Pendapatan: 0,
-			Persentase: 0,
-		}
+		rekapMap[t.ID] = &models.RekapToko{ID: t.ID, Nama: t.NamaToko, Kirim: 0, Retur: 0, Pendapatan: 0, Persentase: 0}
 	}
+
+	// =========================================================================
+	// RUMUS PINTAR KALENDER JANGKAR TIARA (FIXED ANCHOR DAYS)
+	// Menggunakan DATE_TRUNC('week') untuk mengunci hari Senin di minggu itu,
+	// lalu ditambah hari statis, tidak peduli hari apa nota itu diinput.
+	// =========================================================================
+	kirimDateExpr := `CAST(
+		CASE 
+			WHEN nota.siklus_snapshot = 'HARIAN' THEN nota.tanggal_kirim
+			WHEN nota.siklus_snapshot = 'SiklusKamisSenin' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '3 days'
+			WHEN nota.siklus_snapshot = 'SiklusJumatSelasa' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '4 days'
+			WHEN nota.siklus_snapshot = 'SiklusSabtuRabu' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '5 days'
+			ELSE nota.tanggal_kirim
+		END AS DATE)`
+
+	returDateExpr := `CAST(
+		CASE 
+			WHEN nota.siklus_snapshot = 'HARIAN' THEN nota.tanggal_kirim
+			WHEN nota.siklus_snapshot = 'SiklusKamisSenin' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '7 days'
+			WHEN nota.siklus_snapshot = 'SiklusJumatSelasa' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '8 days'
+			WHEN nota.siklus_snapshot = 'SiklusSabtuRabu' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '9 days'
+			ELSE nota.tanggal_kirim + INTERVAL '4 days'
+		END AS DATE)`
 
 	var rawResults []struct {
 		ID    uint
@@ -615,28 +631,24 @@ func GetRangkuman(c *fiber.Ctx) error {
 		Retur float64
 	}
 
-	// 3. EKSEKUSI SQL
-	query := `
+	// 3. EKSEKUSI SQL TOKO
+	queryToko := fmt.Sprintf(`
 		SELECT 
 			toko_id as id,
 			MAX(nama_toko_snapshot) as nama,
-			COALESCE(SUM(CASE WHEN tanggal_kirim >= CAST(? AS DATE) AND tanggal_kirim <= CAST(? AS DATE) THEN jumlah_kirim ELSE 0 END), 0) as kirim,
-			COALESCE(SUM(CASE 
-				WHEN siklus_snapshot = 'HARIAN' AND tanggal_kirim >= CAST(? AS DATE) AND tanggal_kirim <= CAST(? AS DATE) THEN jumlah_retur
-				WHEN siklus_snapshot != 'HARIAN' AND (tanggal_kirim + INTERVAL '4 days') >= CAST(? AS DATE) AND (tanggal_kirim + INTERVAL '4 days') <= CAST(? AS DATE) THEN jumlah_retur
-				ELSE 0 
-			END), 0) as retur
+			COALESCE(SUM(CASE WHEN %s >= CAST(? AS DATE) AND %s <= CAST(? AS DATE) THEN jumlah_kirim ELSE 0 END), 0) as kirim,
+			COALESCE(SUM(CASE WHEN %s >= CAST(? AS DATE) AND %s <= CAST(? AS DATE) THEN jumlah_retur ELSE 0 END), 0) as retur
 		FROM nota
-		WHERE tanggal_kirim >= CAST(? AS DATE) - INTERVAL '4 days' AND tanggal_kirim <= CAST(? AS DATE)
+		WHERE 
+			(%s >= CAST(? AS DATE) AND %s <= CAST(? AS DATE))
+			OR 
+			(%s >= CAST(? AS DATE) AND %s <= CAST(? AS DATE))
 		GROUP BY toko_id
-	`
+	`, kirimDateExpr, kirimDateExpr, returDateExpr, returDateExpr, kirimDateExpr, kirimDateExpr, returDateExpr, returDateExpr)
 
-	if err := DB.Raw(query, startDate, endDate, startDate, endDate, startDate, endDate, startDate, endDate).Scan(&rawResults).Error; err != nil {
-		fmt.Println("❌ ERROR SQL RANGKUMAN:", err.Error())
-		return c.Status(500).JSON(fiber.Map{"error": "Gagal menghitung laporan: " + err.Error()})
-	}
+	// Butuh 8 parameter: 4 untuk cek SELECT, 4 untuk cek WHERE
+	DB.Raw(queryToko, startDate, endDate, startDate, endDate, startDate, endDate, startDate, endDate).Scan(&rawResults)
 
-	// 4. TIMPA KERANGKA MAP DENGAN HASIL TRANSAKSI
 	var totalKirim, totalRetur float64
 
 	for _, r := range rawResults {
@@ -644,11 +656,9 @@ func GetRangkuman(c *fiber.Ctx) error {
 			val.Kirim = r.Kirim
 			val.Retur = r.Retur
 			val.Pendapatan = r.Kirim - r.Retur
-
 			if r.Kirim > 0 {
 				val.Persentase = (r.Retur / r.Kirim) * 100
 			}
-			// Update dengan nama snapshot jika ada transaksi
 			if r.Nama != "" {
 				val.Nama = r.Nama
 			}
@@ -657,16 +667,12 @@ func GetRangkuman(c *fiber.Ctx) error {
 		totalRetur += r.Retur
 	}
 
-	// 5. UBAH MAP MENJADI ARRAY SLICE DAN URUTKAN SESUAI ABJAD
 	var perToko []models.RekapToko
 	for _, r := range rekapMap {
 		perToko = append(perToko, *r)
 	}
 
-	// Mengurutkan nama toko dari A ke Z
-	sort.Slice(perToko, func(i, j int) bool {
-		return perToko[i].Pendapatan > perToko[j].Pendapatan
-	})
+	sort.Slice(perToko, func(i, j int) bool { return perToko[i].Pendapatan > perToko[j].Pendapatan })
 
 	totalPersentase := 0.0
 	if totalKirim > 0 {
@@ -679,29 +685,27 @@ func GetRangkuman(c *fiber.Ctx) error {
 		Retur float64
 	}
 
-	queryBarang := `
+	// 6. EKSEKUSI SQL BARANG
+	queryBarang := fmt.Sprintf(`
 		SELECT 
 			MAX(nota_details.nama_barang_snapshot) as nama,
-			COALESCE(SUM(CASE WHEN nota.tanggal_kirim >= CAST(? AS DATE) AND nota.tanggal_kirim <= CAST(? AS DATE) THEN nota_details.banyak_kirim ELSE 0 END), 0) as kirim,
-			COALESCE(SUM(CASE 
-				WHEN nota.siklus_snapshot = 'HARIAN' AND nota.tanggal_kirim >= CAST(? AS DATE) AND nota.tanggal_kirim <= CAST(? AS DATE) THEN nota_details.banyak_retur
-				WHEN nota.siklus_snapshot != 'HARIAN' AND (nota.tanggal_kirim + INTERVAL '4 days') >= CAST(? AS DATE) AND (nota.tanggal_kirim + INTERVAL '4 days') <= CAST(? AS DATE) THEN nota_details.banyak_retur
-				ELSE 0 
-			END), 0) as retur
+			COALESCE(SUM(CASE WHEN %s >= CAST(? AS DATE) AND %s <= CAST(? AS DATE) THEN nota_details.banyak_kirim ELSE 0 END), 0) as kirim,
+			COALESCE(SUM(CASE WHEN %s >= CAST(? AS DATE) AND %s <= CAST(? AS DATE) THEN nota_details.banyak_retur ELSE 0 END), 0) as retur
 		FROM nota_details
 		JOIN nota ON nota.id = nota_details.nota_id
-		WHERE nota.tanggal_kirim >= CAST(? AS DATE) - INTERVAL '4 days' AND nota.tanggal_kirim <= CAST(? AS DATE)
+		WHERE 
+			(%s >= CAST(? AS DATE) AND %s <= CAST(? AS DATE))
+			OR 
+			(%s >= CAST(? AS DATE) AND %s <= CAST(? AS DATE))
 		GROUP BY nota_details.barang_id
-	`
+	`, kirimDateExpr, kirimDateExpr, returDateExpr, returDateExpr, kirimDateExpr, kirimDateExpr, returDateExpr, returDateExpr)
 
-	if err := DB.Raw(queryBarang, startDate, endDate, startDate, endDate, startDate, endDate, startDate, endDate).Scan(&rawBarang).Error; err != nil {
-		fmt.Println("❌ ERROR SQL RANGKUMAN BARANG:", err.Error())
-	}
+	DB.Raw(queryBarang, startDate, endDate, startDate, endDate, startDate, endDate, startDate, endDate).Scan(&rawBarang)
 
 	var perBarang []models.RekapBarang
 	for _, b := range rawBarang {
 		if b.Kirim == 0 && b.Retur == 0 {
-			continue // Lewati barang yang tidak ada transaksi
+			continue
 		}
 		persen := 0.0
 		if b.Kirim > 0 {
@@ -716,10 +720,7 @@ func GetRangkuman(c *fiber.Ctx) error {
 		})
 	}
 
-	// Urutkan barang dari yang paling laku
-	sort.Slice(perBarang, func(i, j int) bool {
-		return perBarang[i].QtyLaku > perBarang[j].QtyLaku
-	})
+	sort.Slice(perBarang, func(i, j int) bool { return perBarang[i].QtyLaku > perBarang[j].QtyLaku })
 
 	return c.JSON(models.RangkumanResponse{
 		Kirim:      totalKirim,
@@ -736,6 +737,10 @@ func GetRangkumanPerToko(c *fiber.Ctx) error {
 	end := c.Query("end")
 	tokoID := c.Query("toko_id")
 
+	if tokoID == "" || tokoID == "null" || tokoID == "undefined" {
+		return c.Status(400).JSON(fiber.Map{"error": "ID Toko tidak boleh kosong"})
+	}
+
 	var hasil []struct {
 		NamaBarang string `json:"nama_barang"`
 		TotalKirim int    `json:"total_kirim"`
@@ -743,20 +748,47 @@ func GetRangkumanPerToko(c *fiber.Ctx) error {
 		TotalLaku  int    `json:"total_laku"`
 	}
 
-	query := `
+	kirimDateExpr := `CAST(
+		CASE 
+			WHEN nota.siklus_snapshot = 'HARIAN' THEN nota.tanggal_kirim
+			WHEN nota.siklus_snapshot = 'SiklusKamisSenin' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '3 days'
+			WHEN nota.siklus_snapshot = 'SiklusJumatSelasa' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '4 days'
+			WHEN nota.siklus_snapshot = 'SiklusSabtuRabu' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '5 days'
+			ELSE nota.tanggal_kirim
+		END AS DATE)`
+
+	returDateExpr := `CAST(
+		CASE 
+			WHEN nota.siklus_snapshot = 'HARIAN' THEN nota.tanggal_kirim
+			WHEN nota.siklus_snapshot = 'SiklusKamisSenin' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '7 days'
+			WHEN nota.siklus_snapshot = 'SiklusJumatSelasa' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '8 days'
+			WHEN nota.siklus_snapshot = 'SiklusSabtuRabu' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '9 days'
+			ELSE nota.tanggal_kirim + INTERVAL '4 days'
+		END AS DATE)`
+
+	query := fmt.Sprintf(`
 		SELECT 
-			nota_details.nama_barang_snapshot as nama_barang, 
-			SUM(nota_details.banyak_kirim) as total_kirim, 
-			SUM(nota_details.banyak_retur) as total_retur, 
-			SUM(nota_details.banyak_kirim - nota_details.banyak_retur) as total_laku
+			MAX(nota_details.nama_barang_snapshot) as nama_barang, 
+			COALESCE(SUM(CASE WHEN %s >= CAST(? AS DATE) AND %s <= CAST(? AS DATE) THEN nota_details.banyak_kirim ELSE 0 END), 0) as total_kirim, 
+			COALESCE(SUM(CASE WHEN %s >= CAST(? AS DATE) AND %s <= CAST(? AS DATE) THEN nota_details.banyak_retur ELSE 0 END), 0) as total_retur
 		FROM nota_details
 		JOIN nota ON nota.id = nota_details.nota_id
-		WHERE nota.tanggal_kirim >= CAST(? AS DATE) AND nota.tanggal_kirim <= CAST(? AS DATE)
+		WHERE 
+			((%s >= CAST(? AS DATE) AND %s <= CAST(? AS DATE))
+			OR 
+			(%s >= CAST(? AS DATE) AND %s <= CAST(? AS DATE)))
 		AND nota.toko_id = ?
-		GROUP BY nota_details.nama_barang_snapshot
-		ORDER BY total_laku DESC
-	`
-	DB.Raw(query, start, end, tokoID).Scan(&hasil)
+		GROUP BY nota_details.barang_id
+	`, kirimDateExpr, kirimDateExpr, returDateExpr, returDateExpr, kirimDateExpr, kirimDateExpr, returDateExpr, returDateExpr)
+
+	// Parameter dinamis harus pas 9 buah (8 dari tanggal, 1 tokoID)
+	DB.Raw(query, start, end, start, end, start, end, start, end, tokoID).Scan(&hasil)
+
+	for i := range hasil {
+		hasil[i].TotalLaku = hasil[i].TotalKirim - hasil[i].TotalRetur
+	}
+
+	sort.Slice(hasil, func(i, j int) bool { return hasil[i].TotalLaku > hasil[j].TotalLaku })
 
 	return c.JSON(hasil)
 }
@@ -787,19 +819,304 @@ func RestoreData(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Data berhasil dipulihkan"})
 }
 
+// NOTA PESANAN
+func GetNextNotaPesananNumber(c *fiber.Ctx) error {
+	tgl := c.Query("tanggal") // 2026-04-30
+	tglStr := strings.ReplaceAll(tgl, "-", "")
+	tokoID := c.Query("toko_id")
+
+	if tokoID == "" {
+		tokoID = "0" // 0 berarti PABRIK
+	}
+
+	var count int64
+	// Hitung nota pada hari itu khusus untuk toko tersebut
+	if tokoID == "0" {
+		DB.Unscoped().Model(&models.NotaPesanan{}).Where("toko_id IS NULL AND DATE(tanggal_kirim) = ?", tgl).Count(&count)
+	} else {
+		DB.Unscoped().Model(&models.NotaPesanan{}).Where("toko_id = ? AND DATE(tanggal_kirim) = ?", tokoID, tgl).Count(&count)
+	}
+
+	nextUrutan := count + 1
+	// Format: PO/20260430/0-0001 (Pabrik) atau PO/20260430/15-0001 (Mitra)
+	noNota := fmt.Sprintf("PO/%s/%s-%04d", tglStr, tokoID, nextUrutan)
+
+	return c.JSON(fiber.Map{"no_nota": noNota})
+}
+
+func CreateNotaPesanan(c *fiber.Ctx) error {
+	var input struct {
+		NoNota           string `json:"no_nota"`
+		NamaPemesan      string `json:"nama_pemesan"`
+		TanggalKirim     string `json:"tanggal_kirim"`
+		JenisPengambilan string `json:"jenis_pengambilan"`
+		TokoID           *uint  `json:"toko_id"`
+		AssignedTo       uint   `json:"assigned_to"`
+		Status           string `json:"status"`
+		IsLunas          bool   `json:"is_lunas"`
+		Details          []struct {
+			BarangID        *uint   `json:"barang_id"`
+			NamaBarangBebas string  `json:"nama_barang_bebas"`
+			Banyak          int     `json:"banyak"`
+			HargaJual       float64 `json:"harga_jual"`
+			ResepID         *uint   `json:"resep_id"` // <--- TAMBAHAN: Tangkap resep
+			Gramasi         float64 `json:"gramasi"`  // <--- TAMBAHAN: Tangkap gramasi
+		} `json:"details"`
+	}
+
+	if err := c.BodyParser(&input); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Format data salah"})
+	}
+
+	tgl, _ := time.Parse("2006-01-02", input.TanggalKirim)
+	adminID := c.Locals("admin_id").(uint)
+
+	namaTokoSnapshot := "PABRIK"
+	if input.JenisPengambilan == "MITRA" && input.TokoID != nil {
+		var toko models.Toko
+		if err := DB.First(&toko, *input.TokoID).Error; err == nil {
+			namaTokoSnapshot = toko.NamaToko
+		}
+	}
+
+	pesanan := models.NotaPesanan{
+		NoNota:           input.NoNota,
+		NamaPemesan:      input.NamaPemesan,
+		TanggalKirim:     tgl,
+		JenisPengambilan: input.JenisPengambilan,
+		TokoID:           input.TokoID,
+		NamaTokoSnapshot: namaTokoSnapshot,
+		CreatedBy:        adminID,
+		AssignedTo:       input.AssignedTo,
+		Status:           input.Status,
+		IsLunas:          input.IsLunas,
+	}
+
+	var totalBayar float64
+	for _, d := range input.Details {
+		subtotal := float64(d.Banyak) * d.HargaJual
+		totalBayar += subtotal
+
+		pesanan.Details = append(pesanan.Details, models.NotaPesananDetail{
+			BarangID:        d.BarangID,
+			NamaBarangBebas: d.NamaBarangBebas,
+			Banyak:          d.Banyak,
+			HargaJual:       d.HargaJual,
+			Subtotal:        subtotal,
+			ResepID:         d.ResepID, // <--- TAMBAHAN: Simpan resep
+			Gramasi:         d.Gramasi, // <--- TAMBAHAN: Simpan gramasi
+		})
+	}
+	pesanan.TotalBayar = totalBayar
+
+	if err := DB.Create(&pesanan).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"message": "Pesanan berhasil dibuat!", "id": pesanan.ID})
+}
+
+func GetCatatanPesanan(c *fiber.Ctx) error {
+	tgl := c.Query("tanggal") // Cukup kirim 1 tanggal (hari H)
+
+	var results []struct {
+		NamaBarangBebas  string  `json:"nama_barang_bebas"`
+		NamaTokoSnapshot string  `json:"nama_toko"`
+		JenisPengambilan string  `json:"jenis_pengambilan"`
+		TotalBanyak      int     `json:"total_banyak"`
+		TotalRupiah      float64 `json:"total_rupiah"` // <--- BARU: Tangkap jumlah uang
+	}
+
+	// Query rekap berdasarkan hari H pengiriman pesanan
+	err := DB.Table("nota_pesanan_details").
+		Select("nota_pesanan_details.nama_barang_bebas, nota_pesanans.nama_toko_snapshot, nota_pesanans.jenis_pengambilan, SUM(nota_pesanan_details.banyak) as total_banyak, SUM(nota_pesanan_details.subtotal) as total_rupiah"). // <--- BARU: Tarik Subtotal
+		Joins("join nota_pesanans on nota_pesanans.id = nota_pesanan_details.nota_pesanan_id").
+		Where("DATE(nota_pesanans.tanggal_kirim) = ?", tgl).
+		Group("nota_pesanan_details.nama_barang_bebas, nota_pesanans.nama_toko_snapshot, nota_pesanans.jenis_pengambilan").
+		Scan(&results).Error
+
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(results)
+}
+
+// GET PO BY ID
+func GetNotaPesananByID(c *fiber.Ctx) error {
+	id := c.Params("id")
+	var pesanan models.NotaPesanan
+	if err := DB.Preload("Toko").Preload("Details").Preload("Details.Barang").First(&pesanan, id).Error; err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Pesanan tidak ditemukan"})
+	}
+	return c.JSON(pesanan)
+}
+
+// UPDATE PO
+func UpdateNotaPesanan(c *fiber.Ctx) error {
+	id := c.Params("id")
+	var input struct {
+		NamaPemesan      string `json:"nama_pemesan"`
+		TanggalKirim     string `json:"tanggal_kirim"`
+		JenisPengambilan string `json:"jenis_pengambilan"`
+		TokoID           *uint  `json:"toko_id"`
+		AssignedTo       uint   `json:"assigned_to"`
+		Status           string `json:"status"`
+		IsLunas          bool   `json:"is_lunas"`
+		Details          []struct {
+			BarangID        *uint   `json:"barang_id"`
+			NamaBarangBebas string  `json:"nama_barang_bebas"`
+			Banyak          int     `json:"banyak"`
+			HargaJual       float64 `json:"harga_jual"`
+			ResepID         *uint   `json:"resep_id"`
+			Gramasi         float64 `json:"gramasi"`
+		} `json:"details"`
+	}
+
+	if err := c.BodyParser(&input); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Format data salah"})
+	}
+
+	tgl, _ := time.Parse("2006-01-02", input.TanggalKirim)
+
+	// Bersihkan detail lama (replace total)
+	DB.Where("nota_pesanan_id = ?", id).Delete(&models.NotaPesananDetail{})
+
+	var totalBayar float64
+	var newDetails []models.NotaPesananDetail
+
+	for _, d := range input.Details {
+		sub := float64(d.Banyak) * d.HargaJual
+		totalBayar += sub
+		parsedID, _ := strconv.Atoi(id)
+
+		newDetails = append(newDetails, models.NotaPesananDetail{
+			NotaPesananID:   uint(parsedID),
+			BarangID:        d.BarangID,
+			NamaBarangBebas: d.NamaBarangBebas,
+			Banyak:          d.Banyak,
+			HargaJual:       d.HargaJual,
+			Subtotal:        sub,
+			ResepID:         d.ResepID,
+			Gramasi:         d.Gramasi,
+		})
+	}
+
+	DB.Create(&newDetails)
+
+	// Update Header
+	namaTokoSnap := "PABRIK"
+	if input.JenisPengambilan == "MITRA" && input.TokoID != nil {
+		var t models.Toko
+		DB.First(&t, *input.TokoID)
+		namaTokoSnap = t.NamaToko
+	}
+
+	DB.Model(&models.NotaPesanan{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"nama_pemesan":       input.NamaPemesan,
+		"tanggal_kirim":      tgl,
+		"jenis_pengambilan":  input.JenisPengambilan,
+		"toko_id":            input.TokoID,
+		"nama_toko_snapshot": namaTokoSnap,
+		"assigned_to":        input.AssignedTo,
+		"status":             input.Status,
+		"is_lunas":           input.IsLunas,
+		"total_bayar":        totalBayar,
+	})
+
+	return c.JSON(fiber.Map{"message": "Pesanan diupdate!"})
+}
+
+// 1. Get Semua Riwayat Pesanan
+func GetRiwayatPesanan(c *fiber.Ctx) error {
+	var pesanan []models.NotaPesanan
+	// Urutkan dari yang terbaru, hapus Where("riwayat") yang error
+	if err := DB.Preload("Toko").Preload("Details").Order("id desc").Find(&pesanan).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(pesanan)
+}
+
+// 2. Batalkan Pesanan (Soft Cancel, ubah status)
+func BatalkanPesanan(c *fiber.Ctx) error {
+	id := c.Params("id")
+	if err := DB.Model(&models.NotaPesanan{}).Where("id = ?", id).Update("status", "DIBATALKAN").Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"message": "Pesanan berhasil dibatalkan"})
+}
+
+// 3. Get Rangkuman Khusus Pesanan (Untuk Tab Rangkuman Bulanan)
+func GetRangkumanPesanan(c *fiber.Ctx) error {
+	start := c.Query("start")
+	end := c.Query("end")
+
+	// Total Global
+	var summary struct {
+		TotalPendapatan float64 `json:"total_pendapatan"`
+		TotalPesanan    int     `json:"total_pesanan"`
+	}
+	DB.Model(&models.NotaPesanan{}).
+		Where("tanggal_kirim >= ? AND tanggal_kirim <= ? AND status != 'DIBATALKAN'", start, end).
+		Select("COALESCE(SUM(total_bayar), 0) as total_pendapatan, COUNT(id) as total_pesanan").
+		Scan(&summary)
+
+	// Breakdown Per Titik Ambil (Pabrik / Toko A / Toko B)
+	var perTitik []struct {
+		NamaTitik  string  `json:"nama_titik"`
+		Pendapatan float64 `json:"pendapatan"`
+		TotalNota  int     `json:"total_nota"`
+	}
+	DB.Model(&models.NotaPesanan{}).
+		Where("tanggal_kirim >= ? AND tanggal_kirim <= ? AND status != 'DIBATALKAN'", start, end).
+		Select("nama_toko_snapshot as nama_titik, COALESCE(SUM(total_bayar), 0) as pendapatan, COUNT(id) as total_nota").
+		Group("nama_toko_snapshot").
+		Order("pendapatan desc").
+		Scan(&perTitik)
+
+	// ========================================================
+	// BARU: Detail Pesanan per Barang per Titik (Untuk Dropdown)
+	// ========================================================
+	var detailBarang []struct {
+		NamaTitik   string  `json:"nama_titik"`
+		NamaBarang  string  `json:"nama_barang"`
+		TotalQty    int     `json:"total_qty"`
+		TotalRupiah float64 `json:"total_rupiah"`
+	}
+	DB.Table("nota_pesanan_details").
+		Select("nota_pesanans.nama_toko_snapshot as nama_titik, nota_pesanan_details.nama_barang_bebas as nama_barang, SUM(nota_pesanan_details.banyak) as total_qty, SUM(nota_pesanan_details.subtotal) as total_rupiah").
+		Joins("join nota_pesanans on nota_pesanans.id = nota_pesanan_details.nota_pesanan_id").
+		Where("nota_pesanans.tanggal_kirim >= ? AND nota_pesanans.tanggal_kirim <= ? AND nota_pesanans.status != 'DIBATALKAN'", start, end).
+		Group("nota_pesanans.nama_toko_snapshot, nota_pesanan_details.nama_barang_bebas").
+		Order("nama_titik asc, total_qty desc").
+		Scan(&detailBarang)
+
+	// Kembalikan datanya ke Vue
+	return c.JSON(fiber.Map{
+		"total_pendapatan": summary.TotalPendapatan,
+		"total_pesanan":    summary.TotalPesanan,
+		"per_titik":        perTitik,
+		"detail_barang":    detailBarang,
+	})
+}
+
 // DASHBOARD KUNJUNGAN SALES
-func GetDashboardSales(c *fiber.Ctx) error { // Mengambil Nota yang baru dibuat (8 Jam) & Tugas Khusus
+func GetDashboardSales(c *fiber.Ctx) error {
 	adminID := c.Locals("admin_id").(uint)
 	var notaAktif []models.Nota
 	var notaTugas []models.Nota
+	var poTugas []models.NotaPesanan
 
 	// Nota Aktif: 8 jam terakhir, status bebas
 	DB.Preload("Toko").Where("created_by = ? AND created_at >= ?", adminID, time.Now().Add(-8*time.Hour)).Order("id desc").Find(&notaAktif)
 
-	// Tugas Khusus dari Superadmin
+	// Tugas Khusus (Reguler) dari Superadmin
 	DB.Preload("Toko").Where("assigned_to = ? AND (jumlah_retur = 0 OR updated_at > ?)", adminID, time.Now().Add(-12*time.Hour)).Order("id desc").Find(&notaTugas)
 
-	return c.JSON(fiber.Map{"aktif": notaAktif, "tugas": notaTugas})
+	// BARU: Tugas Khusus Pesanan (PO) dari Superadmin yang BELUM SELESAI
+	DB.Where("assigned_to = ? AND status != 'DIAMBIL'", adminID).Order("id desc").Find(&poTugas)
+
+	// Kirim semua tugas ke Vue
+	return c.JSON(fiber.Map{"aktif": notaAktif, "tugas": notaTugas, "tugas_po": poTugas})
 }
 
 func GetKunjunganToko(c *fiber.Ctx) error { // Memeriksa tagihan Retur saat tiba di toko
@@ -871,6 +1188,19 @@ func main() {
 	// SAMPAH
 	api.Get("/sampah", GetTrash)
 	api.Put("/sampah/:type/:id", RestoreData)
+
+	// NOTA PESANAN (RUTE STATIS DI ATAS)
+	api.Get("/pesanan/next-number", GetNextNotaPesananNumber)
+	api.Get("/pesanan/catatan", GetCatatanPesanan)
+	api.Get("/pesanan/riwayat", GetRiwayatPesanan)
+	api.Get("/pesanan/rangkuman-bulanan", GetRangkumanPesanan)
+
+	api.Post("/pesanan", CreateNotaPesanan)
+
+	// NOTA PESANAN (RUTE DINAMIS DENGAN :id WAJIB DI BAWAH)
+	api.Get("/pesanan/:id", GetNotaPesananByID)
+	api.Post("/pesanan/:id", UpdateNotaPesanan)
+	api.Put("/pesanan/:id/batal", BatalkanPesanan)
 
 	// DASHBOARD KUNJUNGAN SALES
 	api.Get("/sales/dashboard", GetDashboardSales)
