@@ -64,34 +64,18 @@ func connectDB() {
 		&models.Admin{},
 		&models.NotaPesanan{},
 		&models.NotaPesananDetail{},
+		&models.Bahan{},
+		&models.PembelianBahan{},
+		&models.Resep{},
+		&models.ResepBahan{},
+		&models.ProduksiMasak{},
+		&models.ProduksiMatang{},
+		&models.SisaLayakJual{},
+		&models.JurnalEfisiensi{},
+		&models.StockOpname{},
+		&models.BarangKemasan{},
 	)
 	log.Println("Database & Tabel Berhasil Disiapkan! 🏗️")
-
-	// // 1. Cek & Buat Super Admin
-	// var adminAccount models.Admin
-	// if err := DB.Where("username = ?", "admin").First(&adminAccount).Error; err != nil {
-	// 	// Jika tidak ditemukan, baru buat
-	// 	hashedAdmin, _ := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
-	// 	DB.Create(&models.Admin{
-	// 		Username: "admin",
-	// 		Password: string(hashedAdmin),
-	// 		Role:     "superadmin",
-	// 	})
-	// 	log.Println("✅ Akun Super Admin 'admin' siap!")
-	// }
-
-	// // 2. Cek & Buat Akun Sales
-	// var salesAccount models.Admin
-	// if err := DB.Where("username = ?", "sales1").First(&salesAccount).Error; err != nil {
-	// 	// Jika sales1 belum ada, buatkan otomatis
-	// 	hashedSales, _ := bcrypt.GenerateFromPassword([]byte("sales123"), bcrypt.DefaultCost)
-	// 	DB.Create(&models.Admin{
-	// 		Username: "sales1",
-	// 		Password: string(hashedSales),
-	// 		Role:     "sales", // <--- UBAH JADI sales
-	// 	})
-	// 	log.Println("✅ Akun Sales 'sales1' siap!")
-	// }
 
 	// 1. Cek & Buat Super Admin dari .env
 	adminUser := os.Getenv("ADMIN_USER")
@@ -405,23 +389,81 @@ func GetProfilTiara(c *fiber.Ctx) error {
 // CATATAN BESAR
 func GetCatatanBesar(c *fiber.Ctx) error {
 	siklus := c.Query("siklus")
+	tanggal := c.Query("tanggal")
+
+	if tanggal == "" {
+		tanggal = time.Now().Format("2006-01-02")
+	}
+
+	// Filter dinamis: Jika siklus kosong (misal hari Minggu), HANYA cari toko harian
+	siklusFilter := "tokos.is_harian = true"
+	if siklus != "" {
+		siklusFilter = fmt.Sprintf("(tokos.%s = true OR tokos.is_harian = true)", siklus)
+	}
+
 	var results []struct {
 		NamaBarang string  `json:"nama_barang"`
 		NamaToko   string  `json:"nama_toko"`
+		IsHarian   bool    `json:"is_harian"` // Agar Vue tahu opacity-nya
 		QtyKirim   int     `json:"qty_kirim"`
 		QtyRetur   int     `json:"qty_retur"`
 		HargaKirim float64 `json:"harga_kirim"`
+		HargaRetur float64 `json:"harga_retur"`
 	}
 
-	err := DB.Table("nota_details").
-		Select("barangs.nama_barang, tokos.nama_toko, SUM(nota_details.banyak_kirim) as qty_kirim, SUM(nota_details.banyak_retur) as qty_retur, SUM(nota_details.harga_kirim) as harga_kirim").
-		Joins("join notas on notas.id = nota_details.nota_id").
-		Joins("join tokos on tokos.id = notas.toko_id").
-		Joins("join barangs on barangs.id = nota_details.barang_id").
-		Where("tokos."+siklus+" = ?", true).
-		Where("notas.tanggal_kirim >= ?", time.Now().AddDate(0, 0, -7)).
-		Group("barangs.nama_barang, tokos.nama_toko").
-		Scan(&results).Error
+	// INI YANG TADI NGGAK SENGAJA TERHAPUS! KITA KEMBALIKAN!
+	kirimDateExpr := `CAST(
+		CASE 
+			WHEN nota.siklus_snapshot = 'HARIAN' THEN nota.tanggal_kirim
+			WHEN nota.siklus_snapshot = 'SiklusKamisSenin' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '3 days'
+			WHEN nota.siklus_snapshot = 'SiklusJumatSelasa' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '4 days'
+			WHEN nota.siklus_snapshot = 'SiklusSabtuRabu' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '5 days'
+			ELSE nota.tanggal_kirim
+		END AS DATE)`
+
+	returDateExpr := `CAST(
+		CASE 
+			WHEN nota.siklus_snapshot = 'HARIAN' THEN 
+				CASE EXTRACT(ISODOW FROM nota.tanggal_kirim)
+					WHEN 1 THEN DATE_TRUNC('week', nota.tanggal_kirim) - INTERVAL '4 days'
+					WHEN 2 THEN DATE_TRUNC('week', nota.tanggal_kirim) - INTERVAL '3 days'
+					WHEN 3 THEN DATE_TRUNC('week', nota.tanggal_kirim) - INTERVAL '2 days'
+					WHEN 4 THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '0 days'
+					WHEN 5 THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '1 days'
+					WHEN 6 THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '2 days'
+					WHEN 7 THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '2 days'
+					ELSE nota.tanggal_kirim
+				END
+			WHEN nota.siklus_snapshot = 'SiklusKamisSenin' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '7 days'
+			WHEN nota.siklus_snapshot = 'SiklusJumatSelasa' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '8 days'
+			WHEN nota.siklus_snapshot = 'SiklusSabtuRabu' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '9 days'
+			ELSE nota.tanggal_kirim + INTERVAL '4 days'
+		END AS DATE)`
+
+	// Query cerdas: Tarik kerangka 30 hari ke belakang agar tabel stabil,
+	// tapi nilai SUM dikunci ketat HANYA pada tanggal filter.
+	query := fmt.Sprintf(`
+		SELECT 
+			barangs.nama_barang, 
+			tokos.nama_toko, 
+			tokos.is_harian,
+			COALESCE(SUM(CASE WHEN %s = CAST(? AS DATE) THEN nota_details.banyak_kirim ELSE 0 END), 0) as qty_kirim, 
+			COALESCE(SUM(CASE WHEN %s = CAST(? AS DATE) THEN nota_details.banyak_retur ELSE 0 END), 0) as qty_retur, 
+			COALESCE(SUM(CASE WHEN %s = CAST(? AS DATE) THEN nota_details.harga_kirim ELSE 0 END), 0) as harga_kirim,
+			COALESCE(SUM(CASE WHEN %s = CAST(? AS DATE) THEN nota_details.harga_retur ELSE 0 END), 0) as harga_retur
+		FROM nota_details
+		JOIN nota ON nota.id = nota_details.nota_id
+		JOIN tokos ON tokos.id = nota.toko_id
+		JOIN barangs ON barangs.id = nota_details.barang_id
+		WHERE 
+			%s 
+		  AND 
+		    nota.tanggal_kirim >= CAST(? AS DATE) - INTERVAL '30 days'
+		GROUP BY barangs.nama_barang, tokos.nama_toko, tokos.is_harian
+	`, kirimDateExpr, returDateExpr, kirimDateExpr, returDateExpr, siklusFilter)
+
+	// Melempar 5 parameter tanggal
+	err := DB.Raw(query, tanggal, tanggal, tanggal, tanggal, tanggal).Scan(&results).Error
 
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
@@ -433,7 +475,7 @@ func GetCatatanBesar(c *fiber.Ctx) error {
 // MASTER BARANG
 func GetBarangs(c *fiber.Ctx) error {
 	var barangs []models.Barang
-	if err := DB.Order("urutan asc, id asc").Find(&barangs).Error; err != nil {
+	if err := DB.Preload("Resep").Preload("Kemasan.Bahan").Order("urutan asc, id asc").Find(&barangs).Error; err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.JSON(barangs)
@@ -458,44 +500,100 @@ func UpdateUrutanBarang(c *fiber.Ctx) error {
 }
 
 func CreateBarang(c *fiber.Ctx) error {
-	var input models.Barang
+	var input struct {
+		NamaBarang      string  `json:"NamaBarang"`
+		HargaDefault    float64 `json:"HargaDefault"`
+		ResepID         *uint   `json:"resep_id"`
+		MetodeKonversi  string  `json:"metode_konversi"`
+		KebutuhanAdonan float64 `json:"kebutuhan_adonan"`
+		MasaSimpan      int     `json:"masa_simpan"`
+		KemasanDetail   []struct {
+			BahanID   uint    `json:"bahan_id"`
+			Kebutuhan float64 `json:"kebutuhan"`
+		} `json:"kemasan_detail"`
+	}
+
 	if err := c.BodyParser(&input); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	// Cari nilai "urutan" tertinggi di database saat ini
 	var maxUrutan int
-	// Gunakan COALESCE agar kalau databasenya kosong, dia mulai dari 0
 	DB.Model(&models.Barang{}).Select("COALESCE(MAX(urutan), 0)").Row().Scan(&maxUrutan)
 
-	// Set urutan barang baru agar otomatis jatuh di paling bawah (+1 dari yang tertinggi)
-	input.Urutan = maxUrutan + 1
+	barang := models.Barang{
+		NamaBarang:      input.NamaBarang,
+		HargaDefault:    input.HargaDefault,
+		Urutan:          maxUrutan + 1,
+		ResepID:         input.ResepID,
+		MetodeKonversi:  input.MetodeKonversi,
+		KebutuhanAdonan: input.KebutuhanAdonan,
+		MasaSimpan:      input.MasaSimpan,
+	}
 
-	// Simpan ke database
-	if err := DB.Create(&input).Error; err != nil {
+	for _, k := range input.KemasanDetail {
+		barang.Kemasan = append(barang.Kemasan, models.BarangKemasan{
+			BahanID:   k.BahanID,
+			Kebutuhan: k.Kebutuhan,
+		})
+	}
+
+	if err := DB.Create(&barang).Error; err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	return c.JSON(input)
+	return c.JSON(fiber.Map{"message": "Barang dan Kemasan berhasil dibuat!", "id": barang.ID})
 }
 
 func UpdateBarang(c *fiber.Ctx) error {
 	id := c.Params("id")
-	var input models.Barang
+
+	var input struct {
+		NamaBarang      string  `json:"NamaBarang"`
+		HargaDefault    float64 `json:"HargaDefault"`
+		ResepID         *uint   `json:"resep_id"`
+		MetodeKonversi  string  `json:"metode_konversi"`
+		KebutuhanAdonan float64 `json:"kebutuhan_adonan"`
+		MasaSimpan      int     `json:"masa_simpan"`
+		KemasanDetail   []struct {
+			BahanID   uint    `json:"bahan_id"`
+			Kebutuhan float64 `json:"kebutuhan"`
+		} `json:"kemasan_detail"`
+	}
 
 	if err := c.BodyParser(&input); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 	}
 
 	var barang models.Barang
-	// Cek apakah barangnya ada
 	if err := DB.First(&barang, id).Error; err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "Barang tidak ditemukan"})
 	}
 
-	// Update data barang
-	DB.Model(&barang).Updates(input)
-	return c.JSON(fiber.Map{"message": "Barang berhasil diupdate", "data": barang})
+	DB.Where("barang_id = ?", id).Delete(&models.BarangKemasan{})
+
+	var newKemasan []models.BarangKemasan
+	parsedID, _ := strconv.Atoi(id)
+	for _, k := range input.KemasanDetail {
+		newKemasan = append(newKemasan, models.BarangKemasan{
+			BarangID:  uint(parsedID),
+			BahanID:   k.BahanID,
+			Kebutuhan: k.Kebutuhan,
+		})
+	}
+	if len(newKemasan) > 0 {
+		DB.Create(&newKemasan)
+	}
+
+	DB.Model(&barang).Updates(map[string]interface{}{
+		"nama_barang":      input.NamaBarang,
+		"harga_default":    input.HargaDefault,
+		"resep_id":         input.ResepID,
+		"metode_konversi":  input.MetodeKonversi,
+		"kebutuhan_adonan": input.KebutuhanAdonan,
+		"masa_simpan":      input.MasaSimpan,
+	})
+
+	return c.JSON(fiber.Map{"message": "Barang berhasil diupdate"})
 }
 
 func DeleteBarang(c *fiber.Ctx) error {
@@ -601,11 +699,6 @@ func GetRangkuman(c *fiber.Ctx) error {
 		rekapMap[t.ID] = &models.RekapToko{ID: t.ID, Nama: t.NamaToko, Kirim: 0, Retur: 0, Pendapatan: 0, Persentase: 0}
 	}
 
-	// =========================================================================
-	// RUMUS PINTAR KALENDER JANGKAR TIARA (FIXED ANCHOR DAYS)
-	// Menggunakan DATE_TRUNC('week') untuk mengunci hari Senin di minggu itu,
-	// lalu ditambah hari statis, tidak peduli hari apa nota itu diinput.
-	// =========================================================================
 	kirimDateExpr := `CAST(
 		CASE 
 			WHEN nota.siklus_snapshot = 'HARIAN' THEN nota.tanggal_kirim
@@ -617,7 +710,17 @@ func GetRangkuman(c *fiber.Ctx) error {
 
 	returDateExpr := `CAST(
 		CASE 
-			WHEN nota.siklus_snapshot = 'HARIAN' THEN nota.tanggal_kirim
+			WHEN nota.siklus_snapshot = 'HARIAN' THEN 
+				CASE EXTRACT(DOW FROM nota.tanggal_kirim)
+					WHEN 1 THEN DATE_TRUNC('week', nota.tanggal_kirim) - INTERVAL '4 days'
+					WHEN 2 THEN DATE_TRUNC('week', nota.tanggal_kirim) - INTERVAL '3 days'
+					WHEN 3 THEN DATE_TRUNC('week', nota.tanggal_kirim) - INTERVAL '2 days'
+					WHEN 4 THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '0 days'
+					WHEN 5 THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '1 days'
+					WHEN 6 THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '2 days'
+					WHEN 0 THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '2 days' 
+					ELSE nota.tanggal_kirim
+				END
 			WHEN nota.siklus_snapshot = 'SiklusKamisSenin' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '7 days'
 			WHEN nota.siklus_snapshot = 'SiklusJumatSelasa' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '8 days'
 			WHEN nota.siklus_snapshot = 'SiklusSabtuRabu' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '9 days'
@@ -646,7 +749,6 @@ func GetRangkuman(c *fiber.Ctx) error {
 		GROUP BY toko_id
 	`, kirimDateExpr, kirimDateExpr, returDateExpr, returDateExpr, kirimDateExpr, kirimDateExpr, returDateExpr, returDateExpr)
 
-	// Butuh 8 parameter: 4 untuk cek SELECT, 4 untuk cek WHERE
 	DB.Raw(queryToko, startDate, endDate, startDate, endDate, startDate, endDate, startDate, endDate).Scan(&rawResults)
 
 	var totalKirim, totalRetur float64
@@ -656,9 +758,16 @@ func GetRangkuman(c *fiber.Ctx) error {
 			val.Kirim = r.Kirim
 			val.Retur = r.Retur
 			val.Pendapatan = r.Kirim - r.Retur
+
+			// LOGIKA BISNIS BARU: Jika ada kirim, hitung normal. Jika tidak ada kirim tapi ada retur, SET 100%!
 			if r.Kirim > 0 {
 				val.Persentase = (r.Retur / r.Kirim) * 100
+			} else if r.Retur > 0 {
+				val.Persentase = 100
+			} else {
+				val.Persentase = 0
 			}
+
 			if r.Nama != "" {
 				val.Nama = r.Nama
 			}
@@ -675,8 +784,11 @@ func GetRangkuman(c *fiber.Ctx) error {
 	sort.Slice(perToko, func(i, j int) bool { return perToko[i].Pendapatan > perToko[j].Pendapatan })
 
 	totalPersentase := 0.0
+	// LOGIKA BISNIS BARU UNTUK TOTAL GLOBAL
 	if totalKirim > 0 {
 		totalPersentase = (totalRetur / totalKirim) * 100
+	} else if totalRetur > 0 {
+		totalPersentase = 100
 	}
 
 	var rawBarang []struct {
@@ -707,10 +819,15 @@ func GetRangkuman(c *fiber.Ctx) error {
 		if b.Kirim == 0 && b.Retur == 0 {
 			continue
 		}
+
+		// LOGIKA BISNIS BARU UNTUK BARANG
 		persen := 0.0
 		if b.Kirim > 0 {
 			persen = (b.Retur / b.Kirim) * 100
+		} else if b.Retur > 0 {
+			persen = 100
 		}
+
 		perBarang = append(perBarang, models.RekapBarang{
 			Nama:       b.Nama,
 			QtyKirim:   b.Kirim,
@@ -742,10 +859,11 @@ func GetRangkumanPerToko(c *fiber.Ctx) error {
 	}
 
 	var hasil []struct {
-		NamaBarang string `json:"nama_barang"`
-		TotalKirim int    `json:"total_kirim"`
-		TotalRetur int    `json:"total_retur"`
-		TotalLaku  int    `json:"total_laku"`
+		NamaBarang string  `json:"nama_barang"`
+		TotalKirim int     `json:"total_kirim"`
+		TotalRetur int     `json:"total_retur"`
+		TotalLaku  int     `json:"total_laku"`
+		Persentase float64 `json:"persentase"`
 	}
 
 	kirimDateExpr := `CAST(
@@ -759,7 +877,17 @@ func GetRangkumanPerToko(c *fiber.Ctx) error {
 
 	returDateExpr := `CAST(
 		CASE 
-			WHEN nota.siklus_snapshot = 'HARIAN' THEN nota.tanggal_kirim
+			WHEN nota.siklus_snapshot = 'HARIAN' THEN 
+				CASE EXTRACT(DOW FROM nota.tanggal_kirim)
+					WHEN 1 THEN DATE_TRUNC('week', nota.tanggal_kirim) - INTERVAL '4 days'
+					WHEN 2 THEN DATE_TRUNC('week', nota.tanggal_kirim) - INTERVAL '3 days'
+					WHEN 3 THEN DATE_TRUNC('week', nota.tanggal_kirim) - INTERVAL '2 days'
+					WHEN 4 THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '0 days'
+					WHEN 5 THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '1 days'
+					WHEN 6 THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '2 days'
+					WHEN 0 THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '2 days'
+					ELSE nota.tanggal_kirim
+				END
 			WHEN nota.siklus_snapshot = 'SiklusKamisSenin' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '7 days'
 			WHEN nota.siklus_snapshot = 'SiklusJumatSelasa' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '8 days'
 			WHEN nota.siklus_snapshot = 'SiklusSabtuRabu' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '9 days'
@@ -781,11 +909,19 @@ func GetRangkumanPerToko(c *fiber.Ctx) error {
 		GROUP BY nota_details.barang_id
 	`, kirimDateExpr, kirimDateExpr, returDateExpr, returDateExpr, kirimDateExpr, kirimDateExpr, returDateExpr, returDateExpr)
 
-	// Parameter dinamis harus pas 9 buah (8 dari tanggal, 1 tokoID)
 	DB.Raw(query, start, end, start, end, start, end, start, end, tokoID).Scan(&hasil)
 
 	for i := range hasil {
 		hasil[i].TotalLaku = hasil[i].TotalKirim - hasil[i].TotalRetur
+
+		// LOGIKA BISNIS: Kirim 0 tapi Retur > 0 = 100%
+		if hasil[i].TotalKirim > 0 {
+			hasil[i].Persentase = (float64(hasil[i].TotalRetur) / float64(hasil[i].TotalKirim)) * 100
+		} else if hasil[i].TotalRetur > 0 {
+			hasil[i].Persentase = 100
+		} else {
+			hasil[i].Persentase = 0
+		}
 	}
 
 	sort.Slice(hasil, func(i, j int) bool { return hasil[i].TotalLaku > hasil[j].TotalLaku })
@@ -797,13 +933,19 @@ func GetRangkumanPerToko(c *fiber.Ctx) error {
 func GetTrash(c *fiber.Ctx) error {
 	var tokoTerhapus []models.Toko
 	var barangTerhapus []models.Barang
+	var bahanTerhapus []models.Bahan
+	var resepTerhapus []models.Resep
 
 	DB.Unscoped().Where("deleted_at IS NOT NULL").Find(&tokoTerhapus)
 	DB.Unscoped().Where("deleted_at IS NOT NULL").Find(&barangTerhapus)
+	DB.Unscoped().Where("deleted_at IS NOT NULL").Find(&bahanTerhapus)
+	DB.Unscoped().Where("deleted_at IS NOT NULL").Find(&resepTerhapus)
 
 	return c.JSON(fiber.Map{
 		"tokos":   tokoTerhapus,
 		"barangs": barangTerhapus,
+		"bahans":  bahanTerhapus,
+		"reseps":  resepTerhapus,
 	})
 }
 
@@ -811,11 +953,19 @@ func RestoreData(c *fiber.Ctx) error {
 	jenis := c.Params("type") // "toko" atau "barang"
 	id := c.Params("id")
 
-	if jenis == "toko" {
+	switch jenis {
+	case "toko":
 		DB.Unscoped().Model(&models.Toko{}).Where("id = ?", id).Update("deleted_at", nil)
-	} else {
+	case "barang":
 		DB.Unscoped().Model(&models.Barang{}).Where("id = ?", id).Update("deleted_at", nil)
+	case "bahan":
+		DB.Unscoped().Model(&models.Bahan{}).Where("id = ?", id).Update("deleted_at", nil)
+	case "resep":
+		DB.Unscoped().Model(&models.Resep{}).Where("id = ?", id).Update("deleted_at", nil)
+	default:
+		return c.Status(400).JSON(fiber.Map{"error": "Jenis data tidak valid"})
 	}
+
 	return c.JSON(fiber.Map{"message": "Data berhasil dipulihkan"})
 }
 
@@ -1136,7 +1286,7 @@ func main() {
 	app := fiber.New()
 
 	app.Use(cors.New(cors.Config{
-		AllowOrigins: "http://localhost:5173, https://nota-tiara-frontend.vercel.app",
+		AllowOrigins: "http://localhost:5173, http://localhost:5174, https://nota-tiara-frontend.vercel.app, https://tiara-inventory.vercel.app",
 	}))
 
 	app.Get("/", func(c *fiber.Ctx) error {
@@ -1156,6 +1306,35 @@ func main() {
 		}
 		return c.JSON(admins)
 	})
+
+	// BAHAN
+	api.Get("/bahan", GetBahan)
+	api.Post("/bahan", CreateBahan)
+	api.Put("/bahan/:id", UpdateBahan)
+	api.Delete("/bahan/:id", DeleteBahan)
+
+	// PEMBELIAN
+	api.Get("/pembelian", GetPembelianBahan)
+	api.Post("/pembelian", CreatePembelianBahan)
+
+	// RESEP
+	api.Get("/resep", GetResep)
+	api.Post("/resep", CreateResep)
+	api.Put("/resep/:id", UpdateResep)
+	api.Delete("/resep/:id", DeleteResep)
+
+	// PRODUKSI HARIAN
+	api.Get("/produksi/masak", GetProduksiMasak)
+	api.Post("/produksi/masak", CreateProduksiMasak)
+	api.Get("/produksi/matang", GetProduksiMatang)
+	api.Post("/produksi/matang", CreateProduksiMatang)
+
+	// TUTUP BUKU & OPNAME
+	api.Post("/produksi/tutup-buku", TutupBukuHarian)
+	api.Get("/produksi/jurnal", GetJurnalTutupBuku)
+	api.Get("/opname", GetOpname)
+	api.Post("/opname", CreateOpname)
+	api.Get("/konversi/sisa-kemarin", GetSisaLayakJualKemarin)
 
 	// BARANG
 	api.Get("/barangs", GetBarangs)
