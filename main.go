@@ -74,6 +74,7 @@ func connectDB() {
 		&models.JurnalEfisiensi{},
 		&models.StockOpname{},
 		&models.BarangKemasan{},
+		&models.BarangRusak{},
 	)
 	log.Println("Database & Tabel Berhasil Disiapkan! 🏗️")
 
@@ -308,10 +309,12 @@ func CreateNota(c *fiber.Ctx) error {
 func UpdateNota(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var input struct {
-		AssignedTo uint   `json:"assigned_to"`
-		Status     string `json:"status"`
-		IsLunas    bool   `json:"is_lunas"`
-		Details    []struct {
+		AssignedTo   uint    `json:"assigned_to"`
+		Status       string  `json:"status"`
+		IsLunas      bool    `json:"is_lunas"`
+		TotalDiskon  float64 `json:"total_diskon"`  // <--- BARU
+		TotalVoucher float64 `json:"total_voucher"` // <--- BARU
+		Details      []struct {
 			ID          uint    `json:"id"`
 			BarangID    uint    `json:"barang_id"`
 			BanyakRetur int     `json:"banyak_retur"`
@@ -362,12 +365,17 @@ func UpdateNota(c *fiber.Ctx) error {
 	DB.Model(&models.NotaDetail{}).Where("nota_id = ?", id).Select("COALESCE(SUM(harga_kirim), 0)").Row().Scan(&totalKirim)
 	DB.Model(&models.NotaDetail{}).Where("nota_id = ?", id).Select("COALESCE(SUM(harga_retur), 0)").Row().Scan(&totalRetur)
 
+	// LOGIKA UANG RIIL BARU!
+	totalBayarAkhir := totalKirim - totalRetur - input.TotalDiskon - input.TotalVoucher
+
 	DB.Model(&models.Nota{}).Where("id = ?", id).Updates(map[string]interface{}{
-		"jumlah_retur": totalRetur,
-		"total_bayar":  totalKirim - totalRetur,
-		"assigned_to":  input.AssignedTo,
-		"status":       input.Status,
-		"is_lunas":     input.IsLunas,
+		"jumlah_retur":  totalRetur,
+		"total_diskon":  input.TotalDiskon,  // <--- SIMPAN DISKON
+		"total_voucher": input.TotalVoucher, // <--- SIMPAN VOUCHER
+		"total_bayar":   totalBayarAkhir,    // <--- HASIL AKHIR
+		"assigned_to":   input.AssignedTo,
+		"status":        input.Status,
+		"is_lunas":      input.IsLunas,
 	})
 
 	return c.JSON(fiber.Map{"message": "Nota berhasil diupdate!"})
@@ -696,7 +704,7 @@ func GetRangkuman(c *fiber.Ctx) error {
 
 	rekapMap := make(map[uint]*models.RekapToko)
 	for _, t := range semuaToko {
-		rekapMap[t.ID] = &models.RekapToko{ID: t.ID, Nama: t.NamaToko, Kirim: 0, Retur: 0, Pendapatan: 0, Persentase: 0}
+		rekapMap[t.ID] = &models.RekapToko{ID: t.ID, Nama: t.NamaToko, Kirim: 0, Retur: 0, Diskon: 0, Pendapatan: 0, Persentase: 0}
 	}
 
 	kirimDateExpr := `CAST(
@@ -728,38 +736,41 @@ func GetRangkuman(c *fiber.Ctx) error {
 		END AS DATE)`
 
 	var rawResults []struct {
-		ID    uint
-		Nama  string
-		Kirim float64
-		Retur float64
+		ID     uint
+		Nama   string
+		Kirim  float64
+		Retur  float64
+		Diskon float64
 	}
 
-	// 3. EKSEKUSI SQL TOKO
+	// 3. EKSEKUSI SQL TOKO (Menambahkan penarikan Diskon + Voucher)
 	queryToko := fmt.Sprintf(`
 		SELECT 
 			toko_id as id,
 			MAX(nama_toko_snapshot) as nama,
-			COALESCE(SUM(CASE WHEN %s >= CAST(? AS DATE) AND %s <= CAST(? AS DATE) THEN jumlah_kirim ELSE 0 END), 0) as kirim,
-			COALESCE(SUM(CASE WHEN %s >= CAST(? AS DATE) AND %s <= CAST(? AS DATE) THEN jumlah_retur ELSE 0 END), 0) as retur
+			COALESCE(SUM(CASE WHEN %[1]s >= CAST(? AS DATE) AND %[1]s <= CAST(? AS DATE) THEN jumlah_kirim ELSE 0 END), 0) as kirim,
+			COALESCE(SUM(CASE WHEN %[2]s >= CAST(? AS DATE) AND %[2]s <= CAST(? AS DATE) THEN jumlah_retur ELSE 0 END), 0) as retur,
+			COALESCE(SUM(CASE WHEN %[1]s >= CAST(? AS DATE) AND %[1]s <= CAST(? AS DATE) THEN (total_diskon + total_voucher) ELSE 0 END), 0) as diskon
 		FROM nota
 		WHERE 
-			(%s >= CAST(? AS DATE) AND %s <= CAST(? AS DATE))
+			(%[1]s >= CAST(? AS DATE) AND %[1]s <= CAST(? AS DATE))
 			OR 
-			(%s >= CAST(? AS DATE) AND %s <= CAST(? AS DATE))
+			(%[2]s >= CAST(? AS DATE) AND %[2]s <= CAST(? AS DATE))
 		GROUP BY toko_id
-	`, kirimDateExpr, kirimDateExpr, returDateExpr, returDateExpr, kirimDateExpr, kirimDateExpr, returDateExpr, returDateExpr)
+	`, kirimDateExpr, returDateExpr)
 
-	DB.Raw(queryToko, startDate, endDate, startDate, endDate, startDate, endDate, startDate, endDate).Scan(&rawResults)
+	DB.Raw(queryToko, startDate, endDate, startDate, endDate, startDate, endDate, startDate, endDate, startDate, endDate).Scan(&rawResults)
 
-	var totalKirim, totalRetur float64
+	var totalKirim, totalRetur, totalDiskon float64
 
 	for _, r := range rawResults {
 		if val, exists := rekapMap[r.ID]; exists {
 			val.Kirim = r.Kirim
 			val.Retur = r.Retur
-			val.Pendapatan = r.Kirim - r.Retur
+			val.Diskon = r.Diskon
+			val.Pendapatan = r.Kirim - r.Retur - r.Diskon // <--- Potong dengan diskon riil
 
-			// LOGIKA BISNIS BARU: Jika ada kirim, hitung normal. Jika tidak ada kirim tapi ada retur, SET 100%!
+			// LOGIKA BISNIS: Jika ada kirim, hitung normal. Jika tidak ada kirim tapi ada retur, SET 100%!
 			if r.Kirim > 0 {
 				val.Persentase = (r.Retur / r.Kirim) * 100
 			} else if r.Retur > 0 {
@@ -774,6 +785,7 @@ func GetRangkuman(c *fiber.Ctx) error {
 		}
 		totalKirim += r.Kirim
 		totalRetur += r.Retur
+		totalDiskon += r.Diskon
 	}
 
 	var perToko []models.RekapToko
@@ -784,7 +796,6 @@ func GetRangkuman(c *fiber.Ctx) error {
 	sort.Slice(perToko, func(i, j int) bool { return perToko[i].Pendapatan > perToko[j].Pendapatan })
 
 	totalPersentase := 0.0
-	// LOGIKA BISNIS BARU UNTUK TOTAL GLOBAL
 	if totalKirim > 0 {
 		totalPersentase = (totalRetur / totalKirim) * 100
 	} else if totalRetur > 0 {
@@ -820,7 +831,6 @@ func GetRangkuman(c *fiber.Ctx) error {
 			continue
 		}
 
-		// LOGIKA BISNIS BARU UNTUK BARANG
 		persen := 0.0
 		if b.Kirim > 0 {
 			persen = (b.Retur / b.Kirim) * 100
@@ -842,7 +852,8 @@ func GetRangkuman(c *fiber.Ctx) error {
 	return c.JSON(models.RangkumanResponse{
 		Kirim:      totalKirim,
 		Retur:      totalRetur,
-		Pendapatan: totalKirim - totalRetur,
+		Diskon:     totalDiskon,
+		Pendapatan: totalKirim - totalRetur - totalDiskon, // <--- Hasil Kas Riil
 		Persentase: totalPersentase,
 		PerToko:    perToko,
 		PerBarang:  perBarang,
@@ -996,21 +1007,23 @@ func GetNextNotaPesananNumber(c *fiber.Ctx) error {
 
 func CreateNotaPesanan(c *fiber.Ctx) error {
 	var input struct {
-		NoNota           string `json:"no_nota"`
-		NamaPemesan      string `json:"nama_pemesan"`
-		TanggalKirim     string `json:"tanggal_kirim"`
-		JenisPengambilan string `json:"jenis_pengambilan"`
-		TokoID           *uint  `json:"toko_id"`
-		AssignedTo       uint   `json:"assigned_to"`
-		Status           string `json:"status"`
-		IsLunas          bool   `json:"is_lunas"`
+		NoNota           string  `json:"no_nota"`
+		NamaPemesan      string  `json:"nama_pemesan"`
+		TanggalKirim     string  `json:"tanggal_kirim"`
+		JenisPengambilan string  `json:"jenis_pengambilan"`
+		TokoID           *uint   `json:"toko_id"`
+		AssignedTo       uint    `json:"assigned_to"`
+		Status           string  `json:"status"`
+		IsLunas          bool    `json:"is_lunas"`
+		UangMuka         float64 `json:"uang_muka"`     // <--- BARU: Tangkap DP
+		TotalVoucher     float64 `json:"total_voucher"` // <--- BARU: Tangkap Voucher
 		Details          []struct {
 			BarangID        *uint   `json:"barang_id"`
 			NamaBarangBebas string  `json:"nama_barang_bebas"`
 			Banyak          int     `json:"banyak"`
 			HargaJual       float64 `json:"harga_jual"`
-			ResepID         *uint   `json:"resep_id"` // <--- TAMBAHAN: Tangkap resep
-			Gramasi         float64 `json:"gramasi"`  // <--- TAMBAHAN: Tangkap gramasi
+			ResepID         *uint   `json:"resep_id"`
+			Gramasi         float64 `json:"gramasi"`
 		} `json:"details"`
 	}
 
@@ -1053,11 +1066,16 @@ func CreateNotaPesanan(c *fiber.Ctx) error {
 			Banyak:          d.Banyak,
 			HargaJual:       d.HargaJual,
 			Subtotal:        subtotal,
-			ResepID:         d.ResepID, // <--- TAMBAHAN: Simpan resep
-			Gramasi:         d.Gramasi, // <--- TAMBAHAN: Simpan gramasi
+			ResepID:         d.ResepID,
+			Gramasi:         d.Gramasi,
 		})
 	}
+
+	// LOGIKA UANG RIIL PO
 	pesanan.TotalBayar = totalBayar
+	pesanan.UangMuka = input.UangMuka
+	pesanan.TotalVoucher = input.TotalVoucher
+	pesanan.SisaTagihan = totalBayar - input.UangMuka - input.TotalVoucher
 
 	if err := DB.Create(&pesanan).Error; err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
@@ -1105,13 +1123,15 @@ func GetNotaPesananByID(c *fiber.Ctx) error {
 func UpdateNotaPesanan(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var input struct {
-		NamaPemesan      string `json:"nama_pemesan"`
-		TanggalKirim     string `json:"tanggal_kirim"`
-		JenisPengambilan string `json:"jenis_pengambilan"`
-		TokoID           *uint  `json:"toko_id"`
-		AssignedTo       uint   `json:"assigned_to"`
-		Status           string `json:"status"`
-		IsLunas          bool   `json:"is_lunas"`
+		NamaPemesan      string  `json:"nama_pemesan"`
+		TanggalKirim     string  `json:"tanggal_kirim"`
+		JenisPengambilan string  `json:"jenis_pengambilan"`
+		TokoID           *uint   `json:"toko_id"`
+		AssignedTo       uint    `json:"assigned_to"`
+		Status           string  `json:"status"`
+		IsLunas          bool    `json:"is_lunas"`
+		UangMuka         float64 `json:"uang_muka"`     // <--- BARU: Tangkap DP
+		TotalVoucher     float64 `json:"total_voucher"` // <--- BARU: Tangkap Voucher
 		Details          []struct {
 			BarangID        *uint   `json:"barang_id"`
 			NamaBarangBebas string  `json:"nama_barang_bebas"`
@@ -1161,6 +1181,9 @@ func UpdateNotaPesanan(c *fiber.Ctx) error {
 		namaTokoSnap = t.NamaToko
 	}
 
+	// HITUNG ULANG SISA TAGIHAN SAAT DI-UPDATE
+	sisaTagihan := totalBayar - input.UangMuka - input.TotalVoucher
+
 	DB.Model(&models.NotaPesanan{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"nama_pemesan":       input.NamaPemesan,
 		"tanggal_kirim":      tgl,
@@ -1171,6 +1194,9 @@ func UpdateNotaPesanan(c *fiber.Ctx) error {
 		"status":             input.Status,
 		"is_lunas":           input.IsLunas,
 		"total_bayar":        totalBayar,
+		"uang_muka":          input.UangMuka,     // <--- UPDATE DP
+		"total_voucher":      input.TotalVoucher, // <--- UPDATE VOUCHER
+		"sisa_tagihan":       sisaTagihan,        // <--- UPDATE SISA
 	})
 
 	return c.JSON(fiber.Map{"message": "Pesanan diupdate!"})
@@ -1204,28 +1230,29 @@ func GetRangkumanPesanan(c *fiber.Ctx) error {
 	var summary struct {
 		TotalPendapatan float64 `json:"total_pendapatan"`
 		TotalPesanan    int     `json:"total_pesanan"`
+		TotalDiskon     float64 `json:"total_diskon"`
 	}
+	// LOGIKA SIMPLE: Semua omzet (dikurangi voucher) diakui penuh di hari H pengiriman
 	DB.Model(&models.NotaPesanan{}).
 		Where("tanggal_kirim >= ? AND tanggal_kirim <= ? AND status != 'DIBATALKAN'", start, end).
-		Select("COALESCE(SUM(total_bayar), 0) as total_pendapatan, COUNT(id) as total_pesanan").
+		Select("COALESCE(SUM(total_bayar - total_voucher), 0) as total_pendapatan, COALESCE(SUM(total_voucher), 0) as total_diskon, COUNT(id) as total_pesanan").
 		Scan(&summary)
 
-	// Breakdown Per Titik Ambil (Pabrik / Toko A / Toko B)
+	// Breakdown Per Titik Ambil
 	var perTitik []struct {
 		NamaTitik  string  `json:"nama_titik"`
 		Pendapatan float64 `json:"pendapatan"`
+		Diskon     float64 `json:"diskon"`
 		TotalNota  int     `json:"total_nota"`
 	}
 	DB.Model(&models.NotaPesanan{}).
 		Where("tanggal_kirim >= ? AND tanggal_kirim <= ? AND status != 'DIBATALKAN'", start, end).
-		Select("nama_toko_snapshot as nama_titik, COALESCE(SUM(total_bayar), 0) as pendapatan, COUNT(id) as total_nota").
+		Select("nama_toko_snapshot as nama_titik, COALESCE(SUM(total_bayar - total_voucher), 0) as pendapatan, COALESCE(SUM(total_voucher), 0) as diskon, COUNT(id) as total_nota").
 		Group("nama_toko_snapshot").
 		Order("pendapatan desc").
 		Scan(&perTitik)
 
-	// ========================================================
-	// BARU: Detail Pesanan per Barang per Titik (Untuk Dropdown)
-	// ========================================================
+	// Detail Pesanan per Barang
 	var detailBarang []struct {
 		NamaTitik   string  `json:"nama_titik"`
 		NamaBarang  string  `json:"nama_barang"`
@@ -1244,6 +1271,7 @@ func GetRangkumanPesanan(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"total_pendapatan": summary.TotalPendapatan,
 		"total_pesanan":    summary.TotalPesanan,
+		"total_diskon":     summary.TotalDiskon, // Murni Voucher saja
 		"per_titik":        perTitik,
 		"detail_barang":    detailBarang,
 	})
@@ -1328,6 +1356,14 @@ func main() {
 	api.Post("/produksi/masak", CreateProduksiMasak)
 	api.Get("/produksi/matang", GetProduksiMatang)
 	api.Post("/produksi/matang", CreateProduksiMatang)
+
+	// TUTUP BUKU & OPNAME
+	api.Post("/produksi/tutup-buku", TutupBukuHarian)
+	api.Get("/produksi/jurnal", GetJurnalTutupBuku)
+
+	// AFKIR / BARANG RUSAK
+	api.Get("/inventory/rusak", GetBarangRusak)
+	api.Post("/inventory/rusak", CreateBarangRusak)
 
 	// TUTUP BUKU & OPNAME
 	api.Post("/produksi/tutup-buku", TutupBukuHarian)

@@ -387,6 +387,18 @@ func TutupBukuHarian(c *fiber.Ctx) error {
 		barangMap[kp.BarangID] = true
 	}
 
+	// -------------------------------------------------------------
+	// BARU: 1.5 MENGHITUNG BARANG RUSAK / GRATIS (PENGURANG MUTLAK)
+	// -------------------------------------------------------------
+	var rusakList []models.BarangRusak
+	DB.Where("tanggal = ?", tgl).Find(&rusakList)
+
+	rusakMap := make(map[uint]int)
+	for _, r := range rusakList {
+		rusakMap[r.BarangID] += r.Qty
+		barangMap[r.BarangID] = true
+	}
+
 	// Eksekusi Pemotongan Sisa
 	for barangID := range barangMap {
 		sisa := matangMap[barangID] - kirimMap[barangID]
@@ -539,4 +551,41 @@ func GetSisaLayakJualKemarin(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.JSON(sisaAktif)
+}
+
+// HANDLER INVENTORY: BARANG RUSAK / AFKIR / GRATIS
+func GetBarangRusak(c *fiber.Ctx) error {
+	tanggal := c.Query("tanggal")
+	if tanggal == "" {
+		tanggal = time.Now().Format("2006-01-02")
+	}
+	var rusak []models.BarangRusak
+	DB.Preload("Barang").Where("tanggal = ?", tanggal).Order("id desc").Find(&rusak)
+	return c.JSON(rusak)
+}
+
+func CreateBarangRusak(c *fiber.Ctx) error {
+	var input struct {
+		Tanggal    string `json:"tanggal"`
+		BarangID   uint   `json:"barang_id"`
+		Qty        int    `json:"qty"`
+		Keterangan string `json:"keterangan"`
+	}
+	if err := c.BodyParser(&input); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Format salah"})
+	}
+
+	tgl, _ := time.Parse("2006-01-02", input.Tanggal)
+
+	rusak := models.BarangRusak{
+		Tanggal:    tgl,
+		BarangID:   input.BarangID,
+		Qty:        input.Qty,
+		Keterangan: input.Keterangan,
+	}
+
+	if err := DB.Create(&rusak).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"message": "Barang afkir/gratis berhasil dicatat!"})
 }

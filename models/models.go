@@ -69,9 +69,11 @@ type Nota struct {
 	IsHarianSnapshot bool   `gorm:"default:false" json:"IsHarianSnapshot"`
 
 	// Hasil Perhitungan
-	JumlahKirim float64 `gorm:"default:0"` // Total harga kirim (Semua barang)
-	JumlahRetur float64 `gorm:"default:0"` // Total harga retur (Semua barang)
-	TotalBayar  float64 `gorm:"default:0"` // JumlahKirim - JumlahRetur
+	JumlahKirim  float64 `gorm:"default:0"`                      // Total harga kirim (Semua barang)
+	JumlahRetur  float64 `gorm:"default:0"`                      // Total harga retur (Semua barang)
+	TotalDiskon  float64 `gorm:"default:0" json:"total_diskon"`  // <--- BARU
+	TotalVoucher float64 `gorm:"default:0" json:"total_voucher"` // <--- BARU
+	TotalBayar   float64 `gorm:"default:0"`                      // JumlahKirim - JumlahRetur
 
 	// PELACAK SALES
 	CreatedBy  uint      `json:"created_by"`
@@ -114,6 +116,7 @@ type RekapToko struct {
 	Nama       string  `json:"nama"`
 	Kirim      float64 `json:"kirim"`
 	Retur      float64 `json:"retur"`
+	Diskon     float64 `json:"diskon"`
 	Pendapatan float64 `json:"pendapatan"`
 	Persentase float64 `json:"persentase"`
 }
@@ -129,6 +132,7 @@ type RekapBarang struct {
 type RangkumanResponse struct {
 	Kirim      float64       `json:"kirim"`
 	Retur      float64       `json:"retur"`
+	Diskon     float64       `json:"diskon"`
 	Pendapatan float64       `json:"pendapatan"`
 	Persentase float64       `json:"persentase"`
 	PerToko    []RekapToko   `json:"perToko"`
@@ -149,9 +153,12 @@ type NotaPesanan struct {
 	Toko             Toko   `gorm:"foreignKey:TokoID"`
 	NamaTokoSnapshot string `json:"NamaTokoSnapshot"` // Catat nama toko saat itu (atau isi "PABRIK")
 
-	TotalBayar float64 `gorm:"default:0"`
-	Status     string  `gorm:"default:'BELUM DIAMBIL'"`
-	IsLunas    bool    `gorm:"default:false" json:"is_lunas"` // 'BELUM DIAMBIL' atau 'LUNAS/DIAMBIL'
+	TotalBayar   float64 `gorm:"default:0"`
+	UangMuka     float64 `gorm:"default:0" json:"uang_muka"`     // <--- BARU (DP)
+	TotalVoucher float64 `gorm:"default:0" json:"total_voucher"` // <--- BARU
+	SisaTagihan  float64 `gorm:"default:0" json:"sisa_tagihan"`
+	Status       string  `gorm:"default:'BELUM DIAMBIL'"`
+	IsLunas      bool    `gorm:"default:false" json:"is_lunas"` // 'BELUM DIAMBIL' atau 'LUNAS/DIAMBIL'
 
 	AssignedTo uint      `json:"assigned_to"`
 	CreatedBy  uint      `json:"created_by"`
@@ -285,4 +292,14 @@ type StockOpname struct {
 	StokFisik  float64   `json:"stok_fisik"`  // Input nyata dari timbangan gudang
 	Selisih    float64   `json:"selisih"`     // Fisik - Sistem
 	Keterangan string    `json:"keterangan"`
+}
+
+// 14. BARANG RUSAK / AFKIR / GRATIS
+type BarangRusak struct {
+	ID         uint      `gorm:"primaryKey"`
+	Tanggal    time.Time `gorm:"type:date" json:"tanggal"`
+	BarangID   uint      `gorm:"not null" json:"barang_id"`
+	Barang     Barang    `gorm:"foreignKey:BarangID" json:"barang"`
+	Qty        int       `gorm:"not null" json:"qty"`
+	Keterangan string    `json:"keterangan"` // Contoh: "Dimakan Tikus", "Tester", "Basi"
 }
