@@ -991,11 +991,12 @@ func GetNextNotaPesananNumber(c *fiber.Ctx) error {
 	}
 
 	var count int64
-	// Hitung nota pada hari itu khusus untuk toko tersebut
+
+	// PERBAIKAN: Hapus filter DATE(tanggal_kirim) agar menghitung SELURUH nota yang pernah dibuat di titik tersebut.
 	if tokoID == "0" {
-		DB.Unscoped().Model(&models.NotaPesanan{}).Where("toko_id IS NULL AND DATE(tanggal_kirim) = ?", tgl).Count(&count)
+		DB.Unscoped().Model(&models.NotaPesanan{}).Where("toko_id IS NULL").Count(&count)
 	} else {
-		DB.Unscoped().Model(&models.NotaPesanan{}).Where("toko_id = ? AND DATE(tanggal_kirim) = ?", tokoID, tgl).Count(&count)
+		DB.Unscoped().Model(&models.NotaPesanan{}).Where("toko_id = ?", tokoID).Count(&count)
 	}
 
 	nextUrutan := count + 1
