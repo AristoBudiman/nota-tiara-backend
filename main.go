@@ -404,9 +404,9 @@ func GetCatatanBesar(c *fiber.Ctx) error {
 	}
 
 	// Filter dinamis: Jika siklus kosong (misal hari Minggu), HANYA cari toko harian
-	siklusFilter := "tokos.is_harian = true"
+	siklusFilter := "nota.siklus_snapshot = 'HARIAN'"
 	if siklus != "" {
-		siklusFilter = fmt.Sprintf("(tokos.%s = true OR tokos.is_harian = true)", siklus)
+		siklusFilter = fmt.Sprintf("(nota.siklus_snapshot = '%s' OR nota.siklus_snapshot = 'HARIAN')", siklus)
 	}
 
 	var results []struct {
@@ -454,7 +454,7 @@ func GetCatatanBesar(c *fiber.Ctx) error {
 		SELECT 
 			barangs.nama_barang, 
 			tokos.nama_toko, 
-			tokos.is_harian,
+			bool_or(nota.is_harian_snapshot) as is_harian, 
 			COALESCE(SUM(CASE WHEN %s = CAST(? AS DATE) THEN nota_details.banyak_kirim ELSE 0 END), 0) as qty_kirim, 
 			COALESCE(SUM(CASE WHEN %s = CAST(? AS DATE) THEN nota_details.banyak_retur ELSE 0 END), 0) as qty_retur, 
 			COALESCE(SUM(CASE WHEN %s = CAST(? AS DATE) THEN nota_details.harga_kirim ELSE 0 END), 0) as harga_kirim,
@@ -467,7 +467,7 @@ func GetCatatanBesar(c *fiber.Ctx) error {
 			%s 
 		  AND 
 		    nota.tanggal_kirim >= CAST(? AS DATE) - INTERVAL '30 days'
-		GROUP BY barangs.nama_barang, tokos.nama_toko, tokos.is_harian
+		GROUP BY barangs.nama_barang, tokos.nama_toko
 	`, kirimDateExpr, returDateExpr, kirimDateExpr, returDateExpr, siklusFilter)
 
 	// Melempar 5 parameter tanggal
@@ -1016,6 +1016,7 @@ func CreateNotaPesanan(c *fiber.Ctx) error {
 		AssignedTo       uint    `json:"assigned_to"`
 		Status           string  `json:"status"`
 		IsLunas          bool    `json:"is_lunas"`
+		Ongkir           float64 `json:"ongkir"`
 		UangMuka         float64 `json:"uang_muka"`     // <--- BARU: Tangkap DP
 		TotalVoucher     float64 `json:"total_voucher"` // <--- BARU: Tangkap Voucher
 		Details          []struct {
@@ -1074,6 +1075,7 @@ func CreateNotaPesanan(c *fiber.Ctx) error {
 
 	// LOGIKA UANG RIIL PO
 	pesanan.TotalBayar = totalBayar
+	pesanan.Ongkir = input.Ongkir
 	pesanan.UangMuka = input.UangMuka
 	pesanan.TotalVoucher = input.TotalVoucher
 	pesanan.SisaTagihan = totalBayar - input.UangMuka - input.TotalVoucher
@@ -1131,6 +1133,7 @@ func UpdateNotaPesanan(c *fiber.Ctx) error {
 		AssignedTo       uint    `json:"assigned_to"`
 		Status           string  `json:"status"`
 		IsLunas          bool    `json:"is_lunas"`
+		Ongkir           float64 `json:"ongkir"`
 		UangMuka         float64 `json:"uang_muka"`     // <--- BARU: Tangkap DP
 		TotalVoucher     float64 `json:"total_voucher"` // <--- BARU: Tangkap Voucher
 		Details          []struct {
@@ -1183,7 +1186,7 @@ func UpdateNotaPesanan(c *fiber.Ctx) error {
 	}
 
 	// HITUNG ULANG SISA TAGIHAN SAAT DI-UPDATE
-	sisaTagihan := totalBayar - input.UangMuka - input.TotalVoucher
+	sisaTagihan := totalBayar + input.Ongkir - input.UangMuka - input.TotalVoucher
 
 	DB.Model(&models.NotaPesanan{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"nama_pemesan":       input.NamaPemesan,
@@ -1195,6 +1198,7 @@ func UpdateNotaPesanan(c *fiber.Ctx) error {
 		"status":             input.Status,
 		"is_lunas":           input.IsLunas,
 		"total_bayar":        totalBayar,
+		"ongkir":             input.Ongkir,
 		"uang_muka":          input.UangMuka,     // <--- UPDATE DP
 		"total_voucher":      input.TotalVoucher, // <--- UPDATE VOUCHER
 		"sisa_tagihan":       sisaTagihan,        // <--- UPDATE SISA

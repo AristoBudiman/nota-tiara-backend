@@ -154,6 +154,7 @@ type NotaPesanan struct {
 	NamaTokoSnapshot string `json:"NamaTokoSnapshot"` // Catat nama toko saat itu (atau isi "PABRIK")
 
 	TotalBayar   float64 `gorm:"default:0"`
+	Ongkir       float64 `json:"ongkir"`
 	UangMuka     float64 `gorm:"default:0" json:"uang_muka"`     // <--- BARU (DP)
 	TotalVoucher float64 `gorm:"default:0" json:"total_voucher"` // <--- BARU
 	SisaTagihan  float64 `gorm:"default:0" json:"sisa_tagihan"`
