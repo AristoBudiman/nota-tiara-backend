@@ -232,6 +232,8 @@ func CreateNota(c *fiber.Ctx) error {
 
 	if toko.IsHarian {
 		siklusAktif = "HARIAN"
+	} else if toko.SiklusDua {
+		siklusAktif = "SiklusDua"
 	} else {
 		switch {
 		case hari == time.Thursday && toko.SiklusKamisSenin:
@@ -406,7 +408,12 @@ func GetCatatanBesar(c *fiber.Ctx) error {
 	// Filter dinamis: Jika siklus kosong (misal hari Minggu), HANYA cari toko harian
 	siklusFilter := "nota.siklus_snapshot = 'HARIAN'"
 	if siklus != "" {
-		siklusFilter = fmt.Sprintf("(nota.siklus_snapshot = '%s' OR nota.siklus_snapshot = 'HARIAN')", siklus)
+		if siklus == "SiklusJumatSelasa" {
+			// Jika memilih Selasa/Jumat, tarik data JumatSelasa DAN SiklusDua
+			siklusFilter = "(nota.siklus_snapshot = 'SiklusJumatSelasa' OR nota.siklus_snapshot = 'SiklusDua' OR nota.siklus_snapshot = 'HARIAN')"
+		} else {
+			siklusFilter = fmt.Sprintf("(nota.siklus_snapshot = '%s' OR nota.siklus_snapshot = 'HARIAN')", siklus)
+		}
 	}
 
 	var results []struct {
@@ -423,6 +430,12 @@ func GetCatatanBesar(c *fiber.Ctx) error {
 	kirimDateExpr := `CAST(
 		CASE 
 			WHEN nota.siklus_snapshot = 'HARIAN' THEN nota.tanggal_kirim
+			WHEN nota.siklus_snapshot = 'SiklusDua' THEN 
+				CASE 
+					WHEN EXTRACT(DOW FROM nota.tanggal_kirim) IN (1,2,3) THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '1 days'
+					WHEN EXTRACT(DOW FROM nota.tanggal_kirim) IN (4,5,6) THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '4 days'
+					ELSE nota.tanggal_kirim
+				END
 			WHEN nota.siklus_snapshot = 'SiklusKamisSenin' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '3 days'
 			WHEN nota.siklus_snapshot = 'SiklusJumatSelasa' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '4 days'
 			WHEN nota.siklus_snapshot = 'SiklusSabtuRabu' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '5 days'
@@ -440,6 +453,12 @@ func GetCatatanBesar(c *fiber.Ctx) error {
 					WHEN 5 THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '1 days'
 					WHEN 6 THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '2 days'
 					WHEN 7 THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '2 days'
+					ELSE nota.tanggal_kirim
+				END
+			WHEN nota.siklus_snapshot = 'SiklusDua' THEN 
+				CASE 
+					WHEN EXTRACT(DOW FROM nota.tanggal_kirim) IN (1,2,3) THEN DATE_TRUNC('week', nota.tanggal_kirim) - INTERVAL '3 days'
+					WHEN EXTRACT(DOW FROM nota.tanggal_kirim) IN (4,5,6) THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '1 days'
 					ELSE nota.tanggal_kirim
 				END
 			WHEN nota.siklus_snapshot = 'SiklusKamisSenin' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '7 days'
@@ -653,6 +672,7 @@ func UpdateToko(c *fiber.Ctx) error {
 		"siklus_jumat_selasa": input.SiklusJumatSelasa,
 		"siklus_sabtu_rabu":   input.SiklusSabtuRabu,
 		"is_harian":           input.IsHarian,
+		"siklus_dua":          input.SiklusDua,
 	})
 
 	return c.JSON(fiber.Map{"message": "Toko berhasil diupdate", "data": toko})
@@ -710,6 +730,12 @@ func GetRangkuman(c *fiber.Ctx) error {
 	kirimDateExpr := `CAST(
 		CASE 
 			WHEN nota.siklus_snapshot = 'HARIAN' THEN nota.tanggal_kirim
+			WHEN nota.siklus_snapshot = 'SiklusDua' THEN 
+				CASE 
+					WHEN EXTRACT(DOW FROM nota.tanggal_kirim) IN (1,2,3) THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '1 days'
+					WHEN EXTRACT(DOW FROM nota.tanggal_kirim) IN (4,5,6) THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '4 days'
+					ELSE nota.tanggal_kirim
+				END
 			WHEN nota.siklus_snapshot = 'SiklusKamisSenin' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '3 days'
 			WHEN nota.siklus_snapshot = 'SiklusJumatSelasa' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '4 days'
 			WHEN nota.siklus_snapshot = 'SiklusSabtuRabu' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '5 days'
@@ -727,6 +753,12 @@ func GetRangkuman(c *fiber.Ctx) error {
 					WHEN 5 THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '1 days'
 					WHEN 6 THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '2 days'
 					WHEN 0 THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '2 days' 
+					ELSE nota.tanggal_kirim
+				END
+			WHEN nota.siklus_snapshot = 'SiklusDua' THEN 
+				CASE 
+					WHEN EXTRACT(DOW FROM nota.tanggal_kirim) IN (1,2,3) THEN DATE_TRUNC('week', nota.tanggal_kirim) - INTERVAL '3 days'
+					WHEN EXTRACT(DOW FROM nota.tanggal_kirim) IN (4,5,6) THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '1 days'
 					ELSE nota.tanggal_kirim
 				END
 			WHEN nota.siklus_snapshot = 'SiklusKamisSenin' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '7 days'
@@ -880,6 +912,12 @@ func GetRangkumanPerToko(c *fiber.Ctx) error {
 	kirimDateExpr := `CAST(
 		CASE 
 			WHEN nota.siklus_snapshot = 'HARIAN' THEN nota.tanggal_kirim
+			WHEN nota.siklus_snapshot = 'SiklusDua' THEN 
+				CASE 
+					WHEN EXTRACT(DOW FROM nota.tanggal_kirim) IN (1,2,3) THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '1 days'
+					WHEN EXTRACT(DOW FROM nota.tanggal_kirim) IN (4,5,6) THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '4 days'
+					ELSE nota.tanggal_kirim
+				END
 			WHEN nota.siklus_snapshot = 'SiklusKamisSenin' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '3 days'
 			WHEN nota.siklus_snapshot = 'SiklusJumatSelasa' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '4 days'
 			WHEN nota.siklus_snapshot = 'SiklusSabtuRabu' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '5 days'
@@ -897,6 +935,12 @@ func GetRangkumanPerToko(c *fiber.Ctx) error {
 					WHEN 5 THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '1 days'
 					WHEN 6 THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '2 days'
 					WHEN 0 THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '2 days'
+					ELSE nota.tanggal_kirim
+				END
+			WHEN nota.siklus_snapshot = 'SiklusDua' THEN 
+				CASE 
+					WHEN EXTRACT(DOW FROM nota.tanggal_kirim) IN (1,2,3) THEN DATE_TRUNC('week', nota.tanggal_kirim) - INTERVAL '3 days'
+					WHEN EXTRACT(DOW FROM nota.tanggal_kirim) IN (4,5,6) THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '1 days'
 					ELSE nota.tanggal_kirim
 				END
 			WHEN nota.siklus_snapshot = 'SiklusKamisSenin' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '7 days'

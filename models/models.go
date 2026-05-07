@@ -31,6 +31,7 @@ type Toko struct {
 	SiklusJumatSelasa bool `gorm:"default:false"`
 	SiklusSabtuRabu   bool `gorm:"default:false"`
 	IsHarian          bool `gorm:"default:false" json:"IsHarian"`
+	SiklusDua         bool `gorm:"not null;default:false"`
 }
 
 // 3. MASTER BARANG
