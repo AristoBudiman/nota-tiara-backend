@@ -314,11 +314,12 @@ func UpdateNota(c *fiber.Ctx) error {
 		AssignedTo   uint    `json:"assigned_to"`
 		Status       string  `json:"status"`
 		IsLunas      bool    `json:"is_lunas"`
-		TotalDiskon  float64 `json:"total_diskon"`  // <--- BARU
-		TotalVoucher float64 `json:"total_voucher"` // <--- BARU
+		TotalDiskon  float64 `json:"total_diskon"`
+		TotalVoucher float64 `json:"total_voucher"`
 		Details      []struct {
 			ID          uint    `json:"id"`
 			BarangID    uint    `json:"barang_id"`
+			BanyakKirim int     `json:"banyak_kirim"` // <--- 1. TAMBAHKAN PENANGKAP QTY KIRIM
 			BanyakRetur int     `json:"banyak_retur"`
 			HargaJual   float64 `json:"harga_jual"`
 		} `json:"details"`
@@ -330,16 +331,18 @@ func UpdateNota(c *fiber.Ctx) error {
 
 	for _, d := range input.Details {
 		hRetur := float64(d.BanyakRetur) * d.HargaJual
+		hKirim := float64(d.BanyakKirim) * d.HargaJual // <--- 2. HITUNG ULANG HARGA KIRIM
 
 		if d.ID != 0 {
-			// Kasus 1: Detail sudah ada, cukup update
+			// Kasus 1: Detail sudah ada, update KIRIM dan RETUR
 			DB.Model(&models.NotaDetail{}).Where("id = ?", d.ID).Updates(map[string]interface{}{
+				"banyak_kirim": d.BanyakKirim, // <--- 3. SIMPAN QTY KIRIM BARU
+				"harga_kirim":  hKirim,        // <--- 4. SIMPAN HARGA KIRIM BARU
 				"banyak_retur": d.BanyakRetur,
 				"harga_retur":  hRetur,
 			})
-		} else if d.BanyakRetur > 0 {
-			// Kasus 2: Detail belum ada (Toko Harian retur barang yang tidak dikirim hari itu)
-			// harus buat baris baru di nota_details
+		} else if d.BanyakRetur > 0 || d.BanyakKirim > 0 {
+			// Kasus 2: Tambah baris baru jika ada isian kirim/retur baru
 			var barang models.Barang
 			DB.First(&barang, d.BarangID)
 
@@ -352,9 +355,9 @@ func UpdateNota(c *fiber.Ctx) error {
 				NotaID:             uint(parsedID),
 				BarangID:           d.BarangID,
 				NamaBarangSnapshot: barang.NamaBarang,
-				BanyakKirim:        0,
+				BanyakKirim:        d.BanyakKirim, // <--- PAKAI INPUT VUE
 				HargaJual:          d.HargaJual,
-				HargaKirim:         0,
+				HargaKirim:         hKirim, // <--- PAKAI HITUNGAN BARU
 				BanyakRetur:        d.BanyakRetur,
 				HargaRetur:         hRetur,
 			}
@@ -367,20 +370,21 @@ func UpdateNota(c *fiber.Ctx) error {
 	DB.Model(&models.NotaDetail{}).Where("nota_id = ?", id).Select("COALESCE(SUM(harga_kirim), 0)").Row().Scan(&totalKirim)
 	DB.Model(&models.NotaDetail{}).Where("nota_id = ?", id).Select("COALESCE(SUM(harga_retur), 0)").Row().Scan(&totalRetur)
 
-	// LOGIKA UANG RIIL BARU!
+	// LOGIKA UANG RIIL
 	totalBayarAkhir := totalKirim - totalRetur - input.TotalDiskon - input.TotalVoucher
 
 	DB.Model(&models.Nota{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"jumlah_kirim":  totalKirim, // <--- 5. WAJIB UPDATE TOTAL KIRIM DI HEADER
 		"jumlah_retur":  totalRetur,
-		"total_diskon":  input.TotalDiskon,  // <--- SIMPAN DISKON
-		"total_voucher": input.TotalVoucher, // <--- SIMPAN VOUCHER
-		"total_bayar":   totalBayarAkhir,    // <--- HASIL AKHIR
+		"total_diskon":  input.TotalDiskon,
+		"total_voucher": input.TotalVoucher,
+		"total_bayar":   totalBayarAkhir,
 		"assigned_to":   input.AssignedTo,
 		"status":        input.Status,
 		"is_lunas":      input.IsLunas,
 	})
 
-	return c.JSON(fiber.Map{"message": "Nota berhasil diupdate!"})
+	return c.JSON(fiber.Map{"message": "Nota dan Qty Kirim berhasil diupdate!"})
 }
 
 func GetProfilTiara(c *fiber.Ctx) error {
