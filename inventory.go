@@ -2,6 +2,7 @@ package main
 
 import (
 	"backend/models"
+	// "fmt"
 	"strconv"
 	"time"
 
@@ -75,9 +76,17 @@ func CreatePembelianBahan(c *fiber.Ctx) error {
 
 	tgl, _ := time.Parse("2006-01-02", input.Tanggal)
 	totalBiaya := input.Qty * input.HargaBeliSatuan
+	// adminID := c.Locals("admin_id").(uint)
 
 	// Gunakan Transaction agar jika salah satu gagal, semuanya batal (Aman untuk Akuntansi)
 	tx := DB.Begin()
+
+	// Ambil detail bahan untuk mendapatkan nama & satuan guna keterangan di Kas
+	// var bahan models.Bahan
+	// if err := tx.First(&bahan, input.BahanID).Error; err != nil {
+	// 	tx.Rollback()
+	// 	return c.Status(404).JSON(fiber.Map{"error": "Bahan tidak ditemukan"})
+	// }
 
 	// 1. Simpan Riwayat Belanja
 	pembelian := models.PembelianBahan{
@@ -102,6 +111,22 @@ func CreatePembelianBahan(c *fiber.Ctx) error {
 		tx.Rollback()
 		return c.Status(500).JSON(fiber.Map{"error": "Gagal update stok bahan: " + err.Error()})
 	}
+
+	// ==========================================
+	// 5. FULL SYNC KAS: CATAT PENGELUARAN BAHAN
+	// ==========================================
+	// ketKas := fmt.Sprintf("Beli Bahan: %s (%v %s) - %s", bahan.NamaBahan, input.Qty, bahan.Satuan, input.Keterangan)
+	// if err := tx.Create(&models.TransaksiKas{
+	// 	Tanggal:    time.Now(),
+	// 	Kategori:   "BAHAN",
+	// 	Jenis:      "KELUAR",
+	// 	Nominal:    totalBiaya,
+	// 	Keterangan: ketKas,
+	// 	CreatedBy:  adminID,
+	// }).Error; err != nil {
+	// 	tx.Rollback()
+	// 	return c.Status(500).JSON(fiber.Map{"error": "Gagal sinkronisasi pengeluaran kas: " + err.Error()})
+	// }
 
 	tx.Commit()
 	return c.JSON(fiber.Map{"message": "Pembelian berhasil dicatat dan stok ditambahkan!"})

@@ -75,6 +75,7 @@ func connectDB() {
 		&models.StockOpname{},
 		&models.BarangKemasan{},
 		&models.BarangRusak{},
+		// &models.TransaksiKas{},
 	)
 	log.Println("Database & Tabel Berhasil Disiapkan! 🏗️")
 
@@ -305,6 +306,22 @@ func CreateNota(c *fiber.Ctx) error {
 	if err := DB.Create(&nota).Error; err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
+
+	// ==========================================
+	// FULL SYNC KAS: CREATE NOTA LUNAS
+	// ==========================================
+	// if input.IsLunas {
+	// 	DB.Create(&models.TransaksiKas{
+	// 		Tanggal:    time.Now(),
+	// 		Kategori:   "REGULER",
+	// 		Jenis:      "MASUK",
+	// 		Nominal:    totalKirim,
+	// 		Keterangan: fmt.Sprintf("Pelunasan Reguler - %s (Toko: %s)", nota.NoNota, toko.NamaToko),
+	// 		NoNotaRef:  nota.NoNota,
+	// 		CreatedBy:  adminID,
+	// 	})
+	// }
+
 	return c.JSON(fiber.Map{"message": "Nota berhasil dibuat!", "id": nota.ID})
 }
 
@@ -328,6 +345,9 @@ func UpdateNota(c *fiber.Ctx) error {
 	if err := c.BodyParser(&input); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 	}
+
+	// var notaLama models.Nota
+	// DB.First(&notaLama, id)
 
 	for _, d := range input.Details {
 		hRetur := float64(d.BanyakRetur) * d.HargaJual
@@ -384,6 +404,40 @@ func UpdateNota(c *fiber.Ctx) error {
 		"is_lunas":      input.IsLunas,
 	})
 
+	// ==========================================
+	// FULL SYNC KAS: UPDATE NOTA REGULER
+	// ==========================================
+	// adminID := c.Locals("admin_id").(uint)
+	// var kasReguler models.TransaksiKas
+	// errKas := DB.Where("no_nota_ref = ? AND kategori = 'REGULER'", notaLama.NoNota).First(&kasReguler).Error
+
+	// if input.IsLunas {
+	// 	ket := fmt.Sprintf("Pelunasan Reguler - %s (Toko: %s)", notaLama.NoNota, notaLama.NamaTokoSnapshot)
+	// 	if errKas == nil {
+	// 		// Sudah ada kasnya, UPDATE nominalnya (Bisa jadi ada tambahan retur/diskon)
+	// 		DB.Model(&kasReguler).Updates(map[string]interface{}{
+	// 			"nominal":    totalBayarAkhir,
+	// 			"keterangan": ket,
+	// 		})
+	// 	} else {
+	// 		// Belum ada, CREATE kas masuk
+	// 		DB.Create(&models.TransaksiKas{
+	// 			Tanggal:    time.Now(),
+	// 			Kategori:   "REGULER",
+	// 			Jenis:      "MASUK",
+	// 			Nominal:    totalBayarAkhir,
+	// 			Keterangan: ket,
+	// 			NoNotaRef:  notaLama.NoNota,
+	// 			CreatedBy:  adminID,
+	// 		})
+	// 	}
+	// } else {
+	// 	// Jika TIDAK LUNAS (atau Batal Lunas), HAPUS KAS JIKA ADA!
+	// 	if errKas == nil {
+	// 		DB.Unscoped().Delete(&kasReguler)
+	// 	}
+	// }
+
 	return c.JSON(fiber.Map{"message": "Nota dan Qty Kirim berhasil diupdate!"})
 }
 
@@ -423,6 +477,7 @@ func GetCatatanBesar(c *fiber.Ctx) error {
 	var results []struct {
 		NamaBarang string  `json:"nama_barang"`
 		NamaToko   string  `json:"nama_toko"`
+		Siklus     string  `json:"siklus"`
 		IsHarian   bool    `json:"is_harian"` // Agar Vue tahu opacity-nya
 		QtyKirim   int     `json:"qty_kirim"`
 		QtyRetur   int     `json:"qty_retur"`
@@ -476,7 +531,8 @@ func GetCatatanBesar(c *fiber.Ctx) error {
 	query := fmt.Sprintf(`
 		SELECT 
 			barangs.nama_barang, 
-			tokos.nama_toko, 
+			tokos.nama_toko,
+			MAX(nota.siklus_snapshot) as siklus,
 			bool_or(nota.is_harian_snapshot) as is_harian, 
 			COALESCE(SUM(CASE WHEN %s = CAST(? AS DATE) THEN nota_details.banyak_kirim ELSE 0 END), 0) as qty_kirim, 
 			COALESCE(SUM(CASE WHEN %s = CAST(? AS DATE) THEN nota_details.banyak_retur ELSE 0 END), 0) as qty_retur, 
@@ -1131,6 +1187,37 @@ func CreateNotaPesanan(c *fiber.Ctx) error {
 	if err := DB.Create(&pesanan).Error; err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
+
+	// ==========================================
+	// FULL SYNC KAS: CREATE PO BARU
+	// ==========================================
+
+	// 1. Catat DP Jika Ada
+	// if pesanan.UangMuka > 0 {
+	// 	DB.Create(&models.TransaksiKas{
+	// 		Tanggal:    time.Now(),
+	// 		Kategori:   "PESANAN",
+	// 		Jenis:      "MASUK",
+	// 		Nominal:    pesanan.UangMuka,
+	// 		Keterangan: fmt.Sprintf("DP Pesanan - %s (Pemesan: %s)", pesanan.NoNota, pesanan.NamaPemesan),
+	// 		NoNotaRef:  pesanan.NoNota,
+	// 		CreatedBy:  adminID,
+	// 	})
+	// }
+
+	// // 2. Catat Pelunasan Sisa PO jika langsung dilunasi
+	// if pesanan.IsLunas && pesanan.SisaTagihan > 0 {
+	// 	DB.Create(&models.TransaksiKas{
+	// 		Tanggal:    time.Now(),
+	// 		Kategori:   "PESANAN",
+	// 		Jenis:      "MASUK",
+	// 		Nominal:    pesanan.SisaTagihan,
+	// 		Keterangan: fmt.Sprintf("Pelunasan Sisa PO - %s (Pemesan: %s)", pesanan.NoNota, pesanan.NamaPemesan),
+	// 		NoNotaRef:  pesanan.NoNota,
+	// 		CreatedBy:  adminID,
+	// 	})
+	// }
+
 	return c.JSON(fiber.Map{"message": "Pesanan berhasil dibuat!", "id": pesanan.ID})
 }
 
@@ -1198,6 +1285,9 @@ func UpdateNotaPesanan(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Format data salah"})
 	}
 
+	// var poLama models.NotaPesanan
+	// DB.First(&poLama, id)
+
 	tgl, _ := time.Parse("2006-01-02", input.TanggalKirim)
 
 	// Bersihkan detail lama (replace total)
@@ -1251,6 +1341,51 @@ func UpdateNotaPesanan(c *fiber.Ctx) error {
 		"total_voucher":      input.TotalVoucher, // <--- UPDATE VOUCHER
 		"sisa_tagihan":       sisaTagihan,        // <--- UPDATE SISA
 	})
+
+	// ==========================================
+	// FULL SYNC KAS: UPDATE PO
+	// ==========================================
+	// adminID := c.Locals("admin_id").(uint)
+
+	// // 1. SINKRONISASI DP PESANAN
+	// var kasDP models.TransaksiKas
+	// errDP := DB.Where("no_nota_ref = ? AND keterangan LIKE 'DP Pesanan%'", poLama.NoNota).First(&kasDP).Error
+
+	// if input.UangMuka > 0 {
+	// 	ketDP := fmt.Sprintf("DP Pesanan - %s (Pemesan: %s)", poLama.NoNota, input.NamaPemesan)
+	// 	if errDP == nil {
+	// 		DB.Model(&kasDP).Updates(map[string]interface{}{"nominal": input.UangMuka, "keterangan": ketDP})
+	// 	} else {
+	// 		DB.Create(&models.TransaksiKas{
+	// 			Tanggal: time.Now(), Kategori: "PESANAN", Jenis: "MASUK",
+	// 			Nominal: input.UangMuka, Keterangan: ketDP, NoNotaRef: poLama.NoNota, CreatedBy: adminID,
+	// 		})
+	// 	}
+	// } else { // Jika DP di-nol-kan, hapus kas DP
+	// 	if errDP == nil {
+	// 		DB.Unscoped().Delete(&kasDP)
+	// 	}
+	// }
+
+	// // 2. SINKRONISASI PELUNASAN SISA TAGIHAN
+	// var kasSisa models.TransaksiKas
+	// errSisa := DB.Where("no_nota_ref = ? AND keterangan LIKE 'Pelunasan Sisa PO%'", poLama.NoNota).First(&kasSisa).Error
+
+	// if input.IsLunas && sisaTagihan > 0 {
+	// 	ketSisa := fmt.Sprintf("Pelunasan Sisa PO - %s (Pemesan: %s)", poLama.NoNota, input.NamaPemesan)
+	// 	if errSisa == nil {
+	// 		DB.Model(&kasSisa).Updates(map[string]interface{}{"nominal": sisaTagihan, "keterangan": ketSisa})
+	// 	} else {
+	// 		DB.Create(&models.TransaksiKas{
+	// 			Tanggal: time.Now(), Kategori: "PESANAN", Jenis: "MASUK",
+	// 			Nominal: sisaTagihan, Keterangan: ketSisa, NoNotaRef: poLama.NoNota, CreatedBy: adminID,
+	// 		})
+	// 	}
+	// } else { // Jika Batal Lunas (atau Sisa Tagihan jadi 0), hapus kas pelunasan
+	// 	if errSisa == nil {
+	// 		DB.Unscoped().Delete(&kasSisa)
+	// 	}
+	// }
 
 	return c.JSON(fiber.Map{"message": "Pesanan diupdate!"})
 }
@@ -1360,6 +1495,64 @@ func GetKunjunganToko(c *fiber.Ctx) error { // Memeriksa tagihan Retur saat tiba
 	return c.JSON(notaBelumRetur)
 }
 
+// ==========
+// MODUL KAS
+// ==========
+
+// // 1. Tarik Data Kas (Bisa difilter per bulan/kategori nanti di Vue)
+// func GetKas(c *fiber.Ctx) error {
+// 	var kas []models.TransaksiKas
+// 	// Urutkan dari yang terbaru (tanggal terbaru, inputan terakhir)
+// 	if err := DB.Order("tanggal desc, id desc").Find(&kas).Error; err != nil {
+// 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+// 	}
+// 	return c.JSON(kas)
+// }
+
+// // 2. Input Kas Manual (Untuk Kategori RUMAH_TANGGA atau Setoran)
+// func CreateKas(c *fiber.Ctx) error {
+// 	var input struct {
+// 		Tanggal    string  `json:"tanggal"`
+// 		Kategori   string  `json:"kategori"` // REGULER, PESANAN, BAHAN, RUMAH_TANGGA
+// 		Jenis      string  `json:"jenis"`    // MASUK, KELUAR
+// 		Nominal    float64 `json:"nominal"`
+// 		Keterangan string  `json:"keterangan"`
+// 		NoNotaRef  string  `json:"no_nota_ref"`
+// 	}
+
+// 	if err := c.BodyParser(&input); err != nil {
+// 		return c.Status(400).JSON(fiber.Map{"error": "Format data salah"})
+// 	}
+
+// 	tgl, _ := time.Parse("2006-01-02", input.Tanggal)
+// 	adminID := c.Locals("admin_id").(uint) // Ambil ID pembuat dari token JWT
+
+// 	kas := models.TransaksiKas{
+// 		Tanggal:    tgl,
+// 		Kategori:   input.Kategori,
+// 		Jenis:      input.Jenis,
+// 		Nominal:    input.Nominal,
+// 		Keterangan: input.Keterangan,
+// 		NoNotaRef:  input.NoNotaRef,
+// 		CreatedBy:  adminID,
+// 	}
+
+// 	if err := DB.Create(&kas).Error; err != nil {
+// 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+// 	}
+
+// 	return c.JSON(fiber.Map{"message": "Transaksi kas berhasil dicatat!", "id": kas.ID})
+// }
+
+// // 3. Hapus Kas (Kalau salah ketik / salah input)
+// func DeleteKas(c *fiber.Ctx) error {
+// 	id := c.Params("id")
+// 	if err := DB.Delete(&models.TransaksiKas{}, id).Error; err != nil {
+// 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+// 	}
+// 	return c.JSON(fiber.Map{"message": "Transaksi kas berhasil dihapus!"})
+// }
+
 // MAIN
 func main() {
 	connectDB()
@@ -1452,6 +1645,11 @@ func main() {
 	// RANGKUMAN
 	api.Get("/rangkuman", GetRangkuman)
 	api.Get("/rangkuman-per-toko", GetRangkumanPerToko)
+
+	// KAS
+	// api.Get("/kas", GetKas)
+	// api.Post("/kas", CreateKas)
+	// api.Delete("/kas/:id", DeleteKas)
 
 	// SAMPAH
 	api.Get("/sampah", GetTrash)

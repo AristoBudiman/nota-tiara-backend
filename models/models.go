@@ -305,3 +305,16 @@ type BarangRusak struct {
 	Qty        int       `gorm:"not null" json:"qty"`
 	Keterangan string    `json:"keterangan"` // Contoh: "Dimakan Tikus", "Tester", "Basi"
 }
+
+// type TransaksiKas struct {
+// 	ID         uint      `gorm:"primaryKey" json:"id"`
+// 	Tanggal    time.Time `gorm:"type:date" json:"tanggal"`
+// 	Kategori   string    `json:"kategori"`
+// 	Jenis      string    `json:"jenis"`
+// 	Nominal    float64   `json:"nominal"`
+// 	Keterangan string    `json:"keterangan"`
+// 	NoNotaRef  string    `json:"no_nota_ref"`
+// 	CreatedBy  uint      `json:"created_by"`
+// 	CreatedAt  time.Time `json:"created_at"`
+// 	UpdatedAt  time.Time `json:"updated_at"`
+// }
