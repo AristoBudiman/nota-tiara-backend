@@ -1968,7 +1968,7 @@ func main() {
 	app := fiber.New()
 
 	app.Use(cors.New(cors.Config{
-		AllowOrigins: "http://localhost:5173, http://localhost:5174, http://localhost:5175, https://nota-tiara-frontend.vercel.app, https://tiara-inventory.vercel.app",
+		AllowOrigins: "http://localhost:5173, http://localhost:5174, http://localhost:5175, https://nota-tiara-frontend.vercel.app, https://tiara-inventory.vercel.app, https://kas-tiara.vercel.app",
 	}))
 
 	app.Get("/", func(c *fiber.Ctx) error {
