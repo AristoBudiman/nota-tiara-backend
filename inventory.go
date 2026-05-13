@@ -2,6 +2,8 @@ package main
 
 import (
 	"backend/models"
+	"fmt"
+
 	// "fmt"
 	"strconv"
 	"time"
@@ -19,7 +21,7 @@ func wib() time.Time {
 // HANDLER INVENTORY: MASTER BAHAN & PEMBELIAN
 func GetBahan(c *fiber.Ctx) error {
 	var bahan []models.Bahan
-	if err := DB.Order("nama_bahan asc").Find(&bahan).Error; err != nil {
+	if err := DB.Order("nama_bahan asc, id_asc").Find(&bahan).Error; err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.JSON(bahan)
@@ -30,6 +32,11 @@ func CreateBahan(c *fiber.Ctx) error {
 	if err := c.BodyParser(&input); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 	}
+
+	var maxUrutan int
+	DB.Model(&models.Bahan{}).Select("COALESCE(MAX(urutan), 0)").Row().Scan(&maxUrutan)
+	input.Urutan = maxUrutan + 1
+
 	if err := DB.Create(&input).Error; err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -60,6 +67,25 @@ func DeleteBahan(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Bahan berhasil dihapus"})
 }
 
+// UBAH URUTAN BAHAN (DRAG & DROP)
+func UpdateUrutanBahan(c *fiber.Ctx) error {
+	var input []struct {
+		ID     uint `json:"id"`
+		Urutan int  `json:"urutan"`
+	}
+
+	if err := c.BodyParser(&input); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Format data salah"})
+	}
+
+	// Loop dan update urutan setiap bahan di database
+	for _, item := range input {
+		DB.Model(&models.Bahan{}).Where("id = ?", item.ID).Update("urutan", item.Urutan)
+	}
+
+	return c.JSON(fiber.Map{"message": "Urutan bahan berhasil diperbarui!"})
+}
+
 // PEMBELIAN BAHAN (UPDATE OTOMATIS)
 func CreatePembelianBahan(c *fiber.Ctx) error {
 	var input struct {
@@ -68,6 +94,7 @@ func CreatePembelianBahan(c *fiber.Ctx) error {
 		Qty             float64 `json:"qty"`
 		HargaBeliSatuan float64 `json:"harga_beli_satuan"`
 		Keterangan      string  `json:"keterangan"`
+		IsLunas         bool    `json:"is_lunas"`
 	}
 
 	if err := c.BodyParser(&input); err != nil {
@@ -96,6 +123,7 @@ func CreatePembelianBahan(c *fiber.Ctx) error {
 		HargaBeliSatuan: input.HargaBeliSatuan,
 		TotalBiaya:      totalBiaya,
 		Keterangan:      input.Keterangan,
+		IsLunas:         input.IsLunas,
 	}
 
 	if err := tx.Create(&pembelian).Error; err != nil {
@@ -113,23 +141,98 @@ func CreatePembelianBahan(c *fiber.Ctx) error {
 	}
 
 	// ==========================================
-	// 5. FULL SYNC KAS: CATAT PENGELUARAN BAHAN
+	// FULL SYNC KAS: HANYA JIKA LANGSUNG LUNAS
 	// ==========================================
-	// ketKas := fmt.Sprintf("Beli Bahan: %s (%v %s) - %s", bahan.NamaBahan, input.Qty, bahan.Satuan, input.Keterangan)
-	// if err := tx.Create(&models.TransaksiKas{
-	// 	Tanggal:    time.Now(),
-	// 	Kategori:   "BAHAN",
-	// 	Jenis:      "KELUAR",
-	// 	Nominal:    totalBiaya,
-	// 	Keterangan: ketKas,
-	// 	CreatedBy:  adminID,
-	// }).Error; err != nil {
-	// 	tx.Rollback()
-	// 	return c.Status(500).JSON(fiber.Map{"error": "Gagal sinkronisasi pengeluaran kas: " + err.Error()})
-	// }
+	var settingKas models.PengaturanSistem
+	DB.Where("key = ?", "ENABLE_KAS_SYNC").First(&settingKas)
+
+	if settingKas.Value == "true" {
+		if input.IsLunas {
+			adminID := c.Locals("admin_id").(uint)
+			var bahan models.Bahan
+			tx.First(&bahan, input.BahanID)
+
+			ketKas := fmt.Sprintf("Beli Bahan: %s (%v %s) - %s", bahan.NamaBahan, input.Qty, bahan.Satuan, input.Keterangan)
+			if err := tx.Create(&models.TransaksiKas{
+				Tanggal:    time.Now(),
+				Kategori:   "BAHAN",
+				Jenis:      "KELUAR",
+				Nominal:    totalBiaya,
+				Keterangan: ketKas,
+				CreatedBy:  adminID,
+			}).Error; err != nil {
+				tx.Rollback()
+				return c.Status(500).JSON(fiber.Map{"error": "Gagal potong kas"})
+			}
+		}
+	}
 
 	tx.Commit()
 	return c.JSON(fiber.Map{"message": "Pembelian berhasil dicatat dan stok ditambahkan!"})
+}
+
+// FUNGSI BARU: UBAH STATUS BAYAR (LUNAS <-> HUTANG)
+func UpdateStatusPembelian(c *fiber.Ctx) error {
+	id := c.Params("id")
+	var input struct {
+		IsLunas bool `json:"is_lunas"`
+	}
+
+	if err := c.BodyParser(&input); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Format data salah"})
+	}
+
+	tx := DB.Begin()
+	var p models.PembelianBahan
+	if err := tx.Preload("Bahan").First(&p, id).Error; err != nil {
+		tx.Rollback()
+		return c.Status(404).JSON(fiber.Map{"error": "Data pembelian tidak ditemukan"})
+	}
+
+	// Update status di database
+	if err := tx.Model(&p).Update("is_lunas", input.IsLunas).Error; err != nil {
+		tx.Rollback()
+		return c.Status(500).JSON(fiber.Map{"error": "Gagal update status"})
+	}
+
+	// ==========================================
+	// FULL SYNC KAS: POTONG ATAU KEMBALIKAN KAS
+	// ==========================================
+	var settingKas models.PengaturanSistem
+	DB.Where("key = ?", "ENABLE_KAS_SYNC").First(&settingKas)
+
+	if settingKas.Value == "true" {
+
+		adminID := c.Locals("admin_id").(uint)
+
+		// Kita buat ID referensi unik agar mudah dicari saat mau dihapus
+		noNotaRefBeli := fmt.Sprintf("BELI-%d", p.ID)
+
+		if input.IsLunas {
+			// JIKA JADI LUNAS -> POTONG KAS (KAS KELUAR)
+			ketKas := fmt.Sprintf("Pelunasan Bahan: %s (%v %s) - %s", p.Bahan.NamaBahan, p.Qty, p.Bahan.Satuan, p.Keterangan)
+
+			// Cek dulu apakah sudah ada (biar tidak dobel)
+			var existingKas models.TransaksiKas
+			if err := tx.Where("no_nota_ref = ?", noNotaRefBeli).First(&existingKas).Error; err != nil {
+				tx.Create(&models.TransaksiKas{
+					Tanggal:    time.Now(),
+					Kategori:   "BAHAN",
+					Jenis:      "KELUAR",
+					Nominal:    p.TotalBiaya,
+					Keterangan: ketKas,
+					NoNotaRef:  noNotaRefBeli,
+					CreatedBy:  adminID,
+				})
+			}
+		} else {
+			// JIKA JADI HUTANG -> TARIK KEMBALI UANGNYA DARI KAS (HAPUS KAS KELUAR TADI)
+			tx.Unscoped().Where("no_nota_ref = ?", noNotaRefBeli).Delete(&models.TransaksiKas{})
+		}
+	}
+
+	tx.Commit()
+	return c.JSON(fiber.Map{"message": "Status pembayaran berhasil diupdate!"})
 }
 
 // HANDLER INVENTORY: MASTER RESEP
@@ -384,12 +487,12 @@ func TutupBukuHarian(c *fiber.Ctx) error {
 		Total    int
 	}
 
-	// Tarik Nota Reguler (PERBAIKAN NAMA TABEL: "nota_details" dan "nota")
+	// Tarik Nota Reguler
 	var kirimReg []KirimResult
 	DB.Table("nota_details").
 		Select("nota_details.barang_id, COALESCE(SUM(nota_details.banyak_kirim), 0) as total").
 		Joins("JOIN nota ON nota.id = nota_details.nota_id").
-		Where("nota.tanggal_kirim = ?", tgl).
+		Where("nota.tanggal_kirim = ? AND nota.status != 'DIBATALKAN'", tgl). // <--- TAMBAHAN FILTER
 		Group("nota_details.barang_id").
 		Scan(&kirimReg)
 
@@ -398,12 +501,12 @@ func TutupBukuHarian(c *fiber.Ctx) error {
 		barangMap[kr.BarangID] = true
 	}
 
-	// Tarik Nota PO (Pesanan) (PERBAIKAN NAMA TABEL: "nota_pesanans")
+	// Tarik Nota PO (Pesanan)
 	var kirimPO []KirimResult
 	DB.Table("nota_pesanan_details").
 		Select("nota_pesanan_details.barang_id, COALESCE(SUM(nota_pesanan_details.banyak), 0) as total").
 		Joins("JOIN nota_pesanans ON nota_pesanans.id = nota_pesanan_details.nota_pesanan_id").
-		Where("nota_pesanans.tanggal_kirim = ? AND nota_pesanan_details.barang_id IS NOT NULL", tgl).
+		Where("nota_pesanans.tanggal_kirim = ? AND nota_pesanan_details.barang_id IS NOT NULL AND nota_pesanans.status != 'DIBATALKAN'", tgl). // <--- TAMBAHAN FILTER
 		Group("nota_pesanan_details.barang_id").
 		Scan(&kirimPO)
 
@@ -449,6 +552,8 @@ func TutupBukuHarian(c *fiber.Ctx) error {
 	}
 
 	hasilMap := make(map[uint]float64)
+
+	// A. Tambahkan Hasil dari Matang Reguler
 	for _, m := range matangList {
 		var b models.Barang
 		DB.First(&b, m.BarangID)
@@ -457,6 +562,29 @@ func TutupBukuHarian(c *fiber.Ctx) error {
 		}
 	}
 
+	// B. (BARU!) Tambahkan Hasil dari Pesanan PO Kustom + POTONG KEMASAN
+	var poKustom []models.NotaPesananDetail
+	DB.Joins("JOIN nota_pesanans ON nota_pesanans.id = nota_pesanan_details.nota_pesanan_id").
+		Preload("KemasanDetail"). // <--- WAJIB PRELOAD RELASI BARU
+		Where("nota_pesanans.tanggal_kirim = ? AND nota_pesanans.status != 'DIBATALKAN'", tgl).
+		Find(&poKustom)
+
+	for _, pk := range poKustom {
+		if pk.ResepID != nil {
+			hasilMap[*pk.ResepID] += (pk.Gramasi * float64(pk.Banyak))
+		}
+
+		// LOGIKA POTONG KEMASAN KHUSUS KUSTOM (BarangID == nil)
+		if pk.BarangID == nil && len(pk.KemasanDetail) > 0 {
+			for _, k := range pk.KemasanDetail {
+				totalPotong := float64(pk.Banyak) * k.Kebutuhan
+				DB.Model(&models.Bahan{}).Where("id = ?", k.BahanID).
+					Update("stok", gorm.Expr("stok - ?", totalPotong))
+			}
+		}
+	}
+
+	// Eksekusi Pembuatan Jurnal Efisiensi
 	for resepID, modal := range masakMap {
 		hasil := hasilMap[resepID]
 		waste := modal - hasil

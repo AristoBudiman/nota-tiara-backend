@@ -170,6 +170,14 @@ type NotaPesanan struct {
 	Details []NotaPesananDetail `gorm:"foreignKey:NotaPesananID"`
 }
 
+type NotaPesananDetailKemasan struct {
+	ID                  uint    `gorm:"primaryKey"`
+	NotaPesananDetailID uint    `gorm:"index" json:"nota_pesanan_detail_id"`
+	BahanID             uint    `gorm:"not null" json:"bahan_id"`
+	Bahan               Bahan   `gorm:"foreignKey:BahanID" json:"bahan"`
+	Kebutuhan           float64 `gorm:"not null" json:"kebutuhan"` // Butuh berapa pcs per 1 roti kustom
+}
+
 // DETAIL BARANG PESANAN
 type NotaPesananDetail struct {
 	ID            uint `gorm:"primaryKey"`
@@ -189,6 +197,8 @@ type NotaPesananDetail struct {
 	Banyak    int     `gorm:"default:0"`
 	HargaJual float64 `gorm:"not null"`
 	Subtotal  float64 `gorm:"default:0"` // Banyak * HargaJual
+
+	KemasanDetail []NotaPesananDetailKemasan `gorm:"foreignKey:NotaPesananDetailID" json:"kemasan_detail"`
 }
 
 // ============================================================================
@@ -204,6 +214,7 @@ type Bahan struct {
 	Stok         float64        `gorm:"default:0" json:"stok"`
 	HargaSaatIni float64        `gorm:"default:0" json:"harga_saat_ini"` // Update otomatis dari pembelian terakhir
 	BatasMinimum float64        `gorm:"default:0" json:"batas_minimum"`
+	Urutan       int            `gorm:"default:0" json:"urutan"`
 }
 
 type BarangKemasan struct {
@@ -224,6 +235,7 @@ type PembelianBahan struct {
 	HargaBeliSatuan float64   `gorm:"not null" json:"harga_beli_satuan"` // Histori harga pada hari H
 	TotalBiaya      float64   `gorm:"not null" json:"total_biaya"`
 	Keterangan      string    `json:"keterangan"`
+	IsLunas         bool      `json:"is_lunas"`
 }
 
 // 8. MASTER RESEP
@@ -306,15 +318,32 @@ type BarangRusak struct {
 	Keterangan string    `json:"keterangan"` // Contoh: "Dimakan Tikus", "Tester", "Basi"
 }
 
-// type TransaksiKas struct {
-// 	ID         uint      `gorm:"primaryKey" json:"id"`
-// 	Tanggal    time.Time `gorm:"type:date" json:"tanggal"`
-// 	Kategori   string    `json:"kategori"`
-// 	Jenis      string    `json:"jenis"`
-// 	Nominal    float64   `json:"nominal"`
-// 	Keterangan string    `json:"keterangan"`
-// 	NoNotaRef  string    `json:"no_nota_ref"`
-// 	CreatedBy  uint      `json:"created_by"`
-// 	CreatedAt  time.Time `json:"created_at"`
-// 	UpdatedAt  time.Time `json:"updated_at"`
-// }
+type TransaksiKas struct {
+	ID         uint      `gorm:"primaryKey" json:"id"`
+	Tanggal    time.Time `gorm:"type:date" json:"tanggal"`
+	Kategori   string    `json:"kategori"`
+	Jenis      string    `json:"jenis"`
+	Nominal    float64   `json:"nominal"`
+	Keterangan string    `json:"keterangan"`
+	NoNotaRef  string    `json:"no_nota_ref"`
+	CreatedBy  uint      `json:"created_by"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+type PengaturanSistem struct {
+	ID    uint   `gorm:"primaryKey"`
+	Key   string `gorm:"unique;not null"` // Contoh: "ENABLE_KAS_SYNC"
+	Value string `gorm:"not null"`        // Contoh: "true" atau "false"
+}
+
+type AsetSnapshot struct {
+	ID              uint      `gorm:"primaryKey" json:"id"`
+	Bulan           time.Time `gorm:"type:date;unique;not null" json:"bulan"` // Contoh: 2026-05-01
+	TotalKas        float64   `json:"total_kas"`
+	TotalPiutang    float64   `json:"total_piutang"`
+	TotalPersediaan float64   `json:"total_persediaan"`
+	TotalHutang     float64   `json:"total_hutang"`
+	AsetBersih      float64   `json:"aset_bersih"`
+	CreatedAt       time.Time `json:"created_at"`
+}
