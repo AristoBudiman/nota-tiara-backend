@@ -21,7 +21,7 @@ func wib() time.Time {
 // HANDLER INVENTORY: MASTER BAHAN & PEMBELIAN
 func GetBahan(c *fiber.Ctx) error {
 	var bahan []models.Bahan
-	if err := DB.Order("nama_bahan asc, id_asc").Find(&bahan).Error; err != nil {
+	if err := DB.Order("nama_bahan asc, id asc").Find(&bahan).Error; err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.JSON(bahan)
