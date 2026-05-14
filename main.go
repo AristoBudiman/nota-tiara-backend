@@ -677,6 +677,7 @@ func GetCatatanBesar(c *fiber.Ctx) error {
 			%s 
 		  AND 
 		    nota.tanggal_kirim >= CAST(? AS DATE) - INTERVAL '30 days'
+		  AND nota.status != 'DIBATALKAN'
 		GROUP BY barangs.nama_barang, tokos.nama_toko
 	`, kirimDateExpr, returDateExpr, kirimDateExpr, returDateExpr, siklusFilter)
 
@@ -975,10 +976,13 @@ func GetRangkuman(c *fiber.Ctx) error {
 			COALESCE(SUM(CASE WHEN %[2]s >= CAST(? AS DATE) AND %[2]s <= CAST(? AS DATE) THEN jumlah_retur ELSE 0 END), 0) as retur,
 			COALESCE(SUM(CASE WHEN %[1]s >= CAST(? AS DATE) AND %[1]s <= CAST(? AS DATE) THEN (total_diskon + total_voucher) ELSE 0 END), 0) as diskon
 		FROM nota
-		WHERE 
-			(%[1]s >= CAST(? AS DATE) AND %[1]s <= CAST(? AS DATE))
-			OR 
-			(%[2]s >= CAST(? AS DATE) AND %[2]s <= CAST(? AS DATE))
+		WHERE
+			( 
+				(%[1]s >= CAST(? AS DATE) AND %[1]s <= CAST(? AS DATE))
+				OR 
+				(%[2]s >= CAST(? AS DATE) AND %[2]s <= CAST(? AS DATE))
+			)
+			AND nota.status != 'DIBATALKAN'
 		GROUP BY toko_id
 	`, kirimDateExpr, returDateExpr)
 
@@ -1039,10 +1043,13 @@ func GetRangkuman(c *fiber.Ctx) error {
 			COALESCE(SUM(CASE WHEN %s >= CAST(? AS DATE) AND %s <= CAST(? AS DATE) THEN nota_details.banyak_retur ELSE 0 END), 0) as retur
 		FROM nota_details
 		JOIN nota ON nota.id = nota_details.nota_id
-		WHERE 
-			(%s >= CAST(? AS DATE) AND %s <= CAST(? AS DATE))
-			OR 
-			(%s >= CAST(? AS DATE) AND %s <= CAST(? AS DATE))
+		WHERE
+			(
+				(%s >= CAST(? AS DATE) AND %s <= CAST(? AS DATE))
+				OR 
+				(%s >= CAST(? AS DATE) AND %s <= CAST(? AS DATE))
+			)
+			AND nota.status != 'DIBATALKAN'
 		GROUP BY nota_details.barang_id
 	`, kirimDateExpr, kirimDateExpr, returDateExpr, returDateExpr, kirimDateExpr, kirimDateExpr, returDateExpr, returDateExpr)
 
@@ -1152,6 +1159,7 @@ func GetRangkumanPerToko(c *fiber.Ctx) error {
 			OR 
 			(%s >= CAST(? AS DATE) AND %s <= CAST(? AS DATE)))
 		AND nota.toko_id = ?
+		AND nota.status != 'DIBATALKAN'
 		GROUP BY nota_details.barang_id
 	`, kirimDateExpr, kirimDateExpr, returDateExpr, returDateExpr, kirimDateExpr, kirimDateExpr, returDateExpr, returDateExpr)
 
@@ -1462,6 +1470,22 @@ func UpdateNotaPesanan(c *fiber.Ctx) error {
 	}
 
 	tgl, _ := time.Parse("2006-01-02", input.TanggalKirim)
+
+	// --- MULAI BLOK REFUND STOK (TAMBAHKAN INI) ---
+	var detailLama []models.NotaPesananDetail
+	// Tarik data detail lama beserta kemasannya
+	DB.Preload("KemasanDetail").Where("nota_pesanan_id = ?", id).Find(&detailLama)
+
+	for _, d := range detailLama {
+		// Jika statusnya sudah pernah dipotong oleh Tutup Buku, kembalikan stoknya dulu
+		if d.IsKemasanTerpotong {
+			for _, k := range d.KemasanDetail {
+				totalBalik := float64(d.Banyak) * k.Kebutuhan
+				DB.Model(&models.Bahan{}).Where("id = ?", k.BahanID).
+					Update("stok", gorm.Expr("stok + ?", totalBalik))
+			}
+		}
+	}
 
 	// 1. HAPUS KEMASAN DULU (ANAKNYA) AGAR TIDAK DIBLOKIR FOREIGN KEY
 	DB.Exec("DELETE FROM nota_pesanan_detail_kemasans WHERE nota_pesanan_detail_id IN (SELECT id FROM nota_pesanan_details WHERE nota_pesanan_id = ?)", id)
@@ -2010,8 +2034,10 @@ func main() {
 	// PRODUKSI HARIAN
 	api.Get("/produksi/masak", RequireRole(RoleSuperadmin), GetProduksiMasak)
 	api.Post("/produksi/masak", RequireRole(RoleSuperadmin), CreateProduksiMasak)
+	api.Delete("/produksi/masak/:id", RequireRole(RoleSuperadmin), DeleteProduksiMasak)
 	api.Get("/produksi/matang", RequireRole(RoleSuperadmin), GetProduksiMatang)
 	api.Post("/produksi/matang", RequireRole(RoleSuperadmin), CreateProduksiMatang)
+	api.Delete("/produksi/matang/:id", RequireRole(RoleSuperadmin), DeleteProduksiMatang)
 
 	// TUTUP BUKU & OPNAME
 	api.Post("/produksi/tutup-buku", RequireRole(RoleSuperadmin), TutupBukuHarian)
@@ -2020,6 +2046,7 @@ func main() {
 	// AFKIR / BARANG RUSAK
 	api.Get("/inventory/rusak", RequireRole(RoleSuperadmin), GetBarangRusak)
 	api.Post("/inventory/rusak", RequireRole(RoleSuperadmin), CreateBarangRusak)
+	api.Delete("/inventory/rusak/:id", RequireRole(RoleSuperadmin), DeleteBarangRusak)
 
 	// TUTUP BUKU & OPNAME
 	api.Post("/produksi/tutup-buku", RequireRole(RoleSuperadmin), TutupBukuHarian)

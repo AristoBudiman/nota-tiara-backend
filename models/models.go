@@ -198,7 +198,8 @@ type NotaPesananDetail struct {
 	HargaJual float64 `gorm:"not null"`
 	Subtotal  float64 `gorm:"default:0"` // Banyak * HargaJual
 
-	KemasanDetail []NotaPesananDetailKemasan `gorm:"foreignKey:NotaPesananDetailID" json:"kemasan_detail"`
+	KemasanDetail      []NotaPesananDetailKemasan `gorm:"foreignKey:NotaPesananDetailID" json:"kemasan_detail"`
+	IsKemasanTerpotong bool                       `gorm:"default:false" json:"is_kemasan_terpotong"`
 }
 
 // ============================================================================

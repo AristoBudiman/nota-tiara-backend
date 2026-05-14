@@ -21,7 +21,7 @@ func wib() time.Time {
 // HANDLER INVENTORY: MASTER BAHAN & PEMBELIAN
 func GetBahan(c *fiber.Ctx) error {
 	var bahan []models.Bahan
-	if err := DB.Order("nama_bahan asc, id asc").Find(&bahan).Error; err != nil {
+	if err := DB.Order("urutan asc").Find(&bahan).Error; err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.JSON(bahan)
@@ -385,6 +385,37 @@ func CreateProduksiMasak(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Produksi berhasil dicatat! Stok gudang otomatis terpotong."})
 }
 
+func DeleteProduksiMasak(c *fiber.Ctx) error {
+	id := c.Params("id")
+	tx := DB.Begin()
+
+	// 1. Cari data masak yang mau dihapus
+	var masak models.ProduksiMasak
+	if err := tx.First(&masak, id).Error; err != nil {
+		tx.Rollback()
+		return c.Status(404).JSON(fiber.Map{"error": "Data masak tidak ditemukan"})
+	}
+
+	// 2. Tarik resep beserta detail bahannya
+	var resep models.Resep
+	if err := tx.Preload("BahanDetail").First(&resep, masak.ResepID).Error; err == nil {
+		// 3. Kembalikan (Refund) stok fisik ke gudang
+		for _, rb := range resep.BahanDetail {
+			pengembalian := rb.Kebutuhan * masak.JumlahBatch
+			if err := tx.Model(&models.Bahan{}).Where("id = ?", rb.BahanID).Update("stok", gorm.Expr("stok + ?", pengembalian)).Error; err != nil {
+				tx.Rollback()
+				return c.Status(500).JSON(fiber.Map{"error": "Gagal mengembalikan stok bahan"})
+			}
+		}
+	}
+
+	// 4. Hapus data masaknya (Gunakan Unscoped agar benar-benar hilang dari database)
+	tx.Unscoped().Delete(&masak)
+	tx.Commit()
+
+	return c.JSON(fiber.Map{"message": "Data masak dibatalkan, stok bahan mentah dikembalikan!"})
+}
+
 func GetProduksiMatang(c *fiber.Ctx) error {
 	tanggal := c.Query("tanggal")
 	if tanggal == "" {
@@ -432,6 +463,34 @@ func CreateProduksiMatang(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Hasil matang dicatat & kemasan terpotong!"})
 }
 
+func DeleteProduksiMatang(c *fiber.Ctx) error {
+	id := c.Params("id")
+	tx := DB.Begin()
+
+	// 1. Cari data matang yang mau dihapus
+	var matang models.ProduksiMatang
+	if err := tx.First(&matang, id).Error; err != nil {
+		tx.Rollback()
+		return c.Status(404).JSON(fiber.Map{"error": "Data matang tidak ditemukan"})
+	}
+
+	// 2. Tarik data barang beserta detail kemasannya
+	var barang models.Barang
+	if err := tx.Preload("Kemasan").First(&barang, matang.BarangID).Error; err == nil {
+		// 3. Kembalikan (Refund) stok kemasan ke gudang
+		for _, k := range barang.Kemasan {
+			pengembalian := k.Kebutuhan * float64(matang.QtyMatang)
+			tx.Model(&models.Bahan{}).Where("id = ?", k.BahanID).Update("stok", gorm.Expr("stok + ?", pengembalian))
+		}
+	}
+
+	// 4. Hapus data matangnya
+	tx.Unscoped().Delete(&matang)
+	tx.Commit()
+
+	return c.JSON(fiber.Map{"message": "Data matang dibatalkan, stok kemasan dikembalikan!"})
+}
+
 func GetPembelianBahan(c *fiber.Ctx) error {
 	start := c.Query("start")
 	end := c.Query("end")
@@ -474,6 +533,12 @@ func TutupBukuHarian(c *fiber.Ctx) error {
 
 	matangMap := make(map[uint]int)
 	barangMap := make(map[uint]bool)
+
+	var existingSisa []models.SisaLayakJual
+	DB.Where("tanggal = ?", tgl).Find(&existingSisa)
+	for _, s := range existingSisa {
+		barangMap[s.BarangID] = true
+	}
 
 	for _, m := range matangList {
 		matangMap[m.BarangID] += m.QtyMatang
@@ -529,7 +594,7 @@ func TutupBukuHarian(c *fiber.Ctx) error {
 
 	// Eksekusi Pemotongan Sisa
 	for barangID := range barangMap {
-		sisa := matangMap[barangID] - kirimMap[barangID]
+		sisa := matangMap[barangID] - kirimMap[barangID] - rusakMap[barangID]
 
 		var slj models.SisaLayakJual
 		err := DB.Where("tanggal = ? AND barang_id = ?", tgl, barangID).First(&slj).Error
@@ -546,6 +611,7 @@ func TutupBukuHarian(c *fiber.Ctx) error {
 	var masakList []models.ProduksiMasak
 	DB.Where("tanggal = ?", tgl).Find(&masakList)
 
+	resepMap := make(map[uint]bool)
 	masakMap := make(map[uint]float64)
 	for _, m := range masakList {
 		masakMap[m.ResepID] += m.TotalAdonan
@@ -559,6 +625,7 @@ func TutupBukuHarian(c *fiber.Ctx) error {
 		DB.First(&b, m.BarangID)
 		if b.ResepID != nil {
 			hasilMap[*b.ResepID] += float64(m.QtyMatang) * b.KebutuhanAdonan
+			resepMap[*b.ResepID] = true
 		}
 	}
 
@@ -572,20 +639,31 @@ func TutupBukuHarian(c *fiber.Ctx) error {
 	for _, pk := range poKustom {
 		if pk.ResepID != nil {
 			hasilMap[*pk.ResepID] += (pk.Gramasi * float64(pk.Banyak))
+			resepMap[*pk.ResepID] = true
 		}
 
 		// LOGIKA POTONG KEMASAN KHUSUS KUSTOM (BarangID == nil)
-		if pk.BarangID == nil && len(pk.KemasanDetail) > 0 {
+		// ++ TAMBAHKAN SYARAT: Hanya potong JIKA BELUM TERPOTONG (!pk.IsKemasanTerpotong)
+		if pk.BarangID == nil && len(pk.KemasanDetail) > 0 && !pk.IsKemasanTerpotong {
 			for _, k := range pk.KemasanDetail {
 				totalPotong := float64(pk.Banyak) * k.Kebutuhan
 				DB.Model(&models.Bahan{}).Where("id = ?", k.BahanID).
 					Update("stok", gorm.Expr("stok - ?", totalPotong))
 			}
+			// ++ KUNCI GEMBOKNYA: Update baris pesanan ini agar tidak dipotong lagi besok/nanti
+			DB.Model(&models.NotaPesananDetail{}).Where("id = ?", pk.ID).Update("is_kemasan_terpotong", true)
 		}
 	}
 
+	var existingJurnal []models.JurnalEfisiensi
+	DB.Where("tanggal = ?", tgl).Find(&existingJurnal)
+	for _, j := range existingJurnal {
+		resepMap[j.ResepID] = true
+	}
+
 	// Eksekusi Pembuatan Jurnal Efisiensi
-	for resepID, modal := range masakMap {
+	for resepID := range resepMap {
+		modal := masakMap[resepID]
 		hasil := hasilMap[resepID]
 		waste := modal - hasil
 		kinerja := 0.0
@@ -741,4 +819,15 @@ func CreateBarangRusak(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.JSON(fiber.Map{"message": "Barang afkir/gratis berhasil dicatat!"})
+}
+
+func DeleteBarangRusak(c *fiber.Ctx) error {
+	id := c.Params("id")
+
+	// Cukup hapus datanya. Mesin Tutup Buku akan otomatis menyesuaikan diri malam harinya!
+	if err := DB.Unscoped().Delete(&models.BarangRusak{}, id).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Gagal menghapus data afkir: " + err.Error()})
+	}
+
+	return c.JSON(fiber.Map{"message": "Data afkir berhasil dibatalkan!"})
 }
