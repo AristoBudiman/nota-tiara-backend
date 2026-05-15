@@ -3,87 +3,33 @@ package main
 import (
 	"backend/models"
 	"fmt"
-
-	// "fmt"
-	"strconv"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"gorm.io/gorm"
 )
 
-// HELPER WIB
-func wib() time.Time {
-	loc, _ := time.LoadLocation("Asia/Jakarta")
-	return time.Now().In(loc)
-}
+func GetPembelianBahan(c *fiber.Ctx) error {
+	start := c.Query("start")
+	end := c.Query("end")
 
-// HANDLER INVENTORY: MASTER BAHAN & PEMBELIAN
-func GetBahan(c *fiber.Ctx) error {
-	var bahan []models.Bahan
-	if err := DB.Order("urutan asc").Find(&bahan).Error; err != nil {
+	var beli []models.PembelianBahan
+
+	query := DB.Preload("Bahan", func(db *gorm.DB) *gorm.DB {
+		return db.Unscoped()
+	})
+
+	// Jika frontend mengirim parameter tanggal, filter query-nya
+	if start != "" && end != "" {
+		query = query.Where("tanggal >= ? AND tanggal <= ?", start, end)
+	}
+
+	// Tarik riwayat belanja beserta nama bahannya, urutkan dari yang terbaru
+	if err := query.Order("tanggal desc, id desc").Find(&beli).Error; err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	return c.JSON(bahan)
-}
 
-func CreateBahan(c *fiber.Ctx) error {
-	var input models.Bahan
-	if err := c.BodyParser(&input); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
-	}
-
-	var maxUrutan int
-	DB.Model(&models.Bahan{}).Select("COALESCE(MAX(urutan), 0)").Row().Scan(&maxUrutan)
-	input.Urutan = maxUrutan + 1
-
-	if err := DB.Create(&input).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
-	return c.JSON(input)
-}
-
-func UpdateBahan(c *fiber.Ctx) error {
-	id := c.Params("id")
-	var input models.Bahan
-	if err := c.BodyParser(&input); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
-	}
-
-	var bahan models.Bahan
-	if err := DB.First(&bahan, id).Error; err != nil {
-		return c.Status(404).JSON(fiber.Map{"error": "Bahan tidak ditemukan"})
-	}
-
-	DB.Model(&bahan).Updates(input)
-	return c.JSON(fiber.Map{"message": "Bahan berhasil diupdate", "data": bahan})
-}
-
-func DeleteBahan(c *fiber.Ctx) error {
-	id := c.Params("id")
-	if err := DB.Delete(&models.Bahan{}, id).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
-	return c.JSON(fiber.Map{"message": "Bahan berhasil dihapus"})
-}
-
-// UBAH URUTAN BAHAN (DRAG & DROP)
-func UpdateUrutanBahan(c *fiber.Ctx) error {
-	var input []struct {
-		ID     uint `json:"id"`
-		Urutan int  `json:"urutan"`
-	}
-
-	if err := c.BodyParser(&input); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "Format data salah"})
-	}
-
-	// Loop dan update urutan setiap bahan di database
-	for _, item := range input {
-		DB.Model(&models.Bahan{}).Where("id = ?", item.ID).Update("urutan", item.Urutan)
-	}
-
-	return c.JSON(fiber.Map{"message": "Urutan bahan berhasil diperbarui!"})
+	return c.JSON(beli)
 }
 
 // PEMBELIAN BAHAN (UPDATE OTOMATIS)
@@ -270,98 +216,7 @@ func DeletePembelianBahan(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Pembelian dibatalkan, stok dikurangi, dan kas ditarik kembali!"})
 }
 
-// HANDLER INVENTORY: MASTER RESEP
-func GetResep(c *fiber.Ctx) error {
-	var resep []models.Resep
-	// Preload isi resep beserta nama bahan-bahannya
-	if err := DB.Preload("BahanDetail.Bahan").Find(&resep).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
-	return c.JSON(resep)
-}
-
-func CreateResep(c *fiber.Ctx) error {
-	var input struct {
-		NamaResep     string  `json:"nama_resep"`
-		TargetGramasi float64 `json:"target_gramasi"`
-		BahanDetail   []struct {
-			BahanID   uint    `json:"bahan_id"`
-			Kebutuhan float64 `json:"kebutuhan"`
-		} `json:"bahan_detail"`
-	}
-
-	if err := c.BodyParser(&input); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "Format data salah"})
-	}
-
-	resep := models.Resep{
-		NamaResep:     input.NamaResep,
-		TargetGramasi: input.TargetGramasi,
-	}
-
-	for _, b := range input.BahanDetail {
-		resep.BahanDetail = append(resep.BahanDetail, models.ResepBahan{
-			BahanID:   b.BahanID,
-			Kebutuhan: b.Kebutuhan,
-		})
-	}
-
-	if err := DB.Create(&resep).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
-	return c.JSON(fiber.Map{"message": "Resep berhasil dibuat!", "id": resep.ID})
-}
-
-func UpdateResep(c *fiber.Ctx) error {
-	id := c.Params("id")
-	var input struct {
-		NamaResep     string  `json:"nama_resep"`
-		TargetGramasi float64 `json:"target_gramasi"`
-		BahanDetail   []struct {
-			BahanID   uint    `json:"bahan_id"`
-			Kebutuhan float64 `json:"kebutuhan"`
-		} `json:"bahan_detail"`
-	}
-
-	if err := c.BodyParser(&input); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "Format data salah"})
-	}
-
-	// Hapus bahan-bahan lama
-	DB.Where("resep_id = ?", id).Delete(&models.ResepBahan{})
-
-	// Insert bahan-bahan baru
-	var newBahan []models.ResepBahan
-	parsedID, _ := strconv.Atoi(id)
-	for _, b := range input.BahanDetail {
-		newBahan = append(newBahan, models.ResepBahan{
-			ResepID:   uint(parsedID),
-			BahanID:   b.BahanID,
-			Kebutuhan: b.Kebutuhan,
-		})
-	}
-	DB.Create(&newBahan)
-
-	// Update Header Resep
-	DB.Model(&models.Resep{}).Where("id = ?", id).Updates(map[string]interface{}{
-		"nama_resep":     input.NamaResep,
-		"target_gramasi": input.TargetGramasi,
-	})
-
-	return c.JSON(fiber.Map{"message": "Resep berhasil diupdate!"})
-}
-
-func DeleteResep(c *fiber.Ctx) error {
-	id := c.Params("id")
-	// Soft delete resep, bahan detail akan terikat oleh relasi tapi resepnya hilang
-	if err := DB.Delete(&models.Resep{}, id).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
-	return c.JSON(fiber.Map{"message": "Resep berhasil dihapus"})
-}
-
-// HANDLER INVENTORY: PRODUKSI HARIAN
-
+// PRODUKSI MASAK
 func GetProduksiMasak(c *fiber.Ctx) error {
 	tanggal := c.Query("tanggal")
 	if tanggal == "" {
@@ -453,6 +308,7 @@ func DeleteProduksiMasak(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Data masak dibatalkan, stok bahan mentah dikembalikan!"})
 }
 
+// PRODUKSI MATANG
 func GetProduksiMatang(c *fiber.Ctx) error {
 	tanggal := c.Query("tanggal")
 	if tanggal == "" {
@@ -530,30 +386,57 @@ func DeleteProduksiMatang(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Data matang dibatalkan, stok kemasan dikembalikan!"})
 }
 
-func GetPembelianBahan(c *fiber.Ctx) error {
-	start := c.Query("start")
-	end := c.Query("end")
-
-	var beli []models.PembelianBahan
-
-	query := DB.Preload("Bahan", func(db *gorm.DB) *gorm.DB {
+// BARANG RUSAK / AFKIR / GRATIS
+func GetBarangRusak(c *fiber.Ctx) error {
+	tanggal := c.Query("tanggal")
+	if tanggal == "" {
+		tanggal = time.Now().Format("2006-01-02")
+	}
+	var rusak []models.BarangRusak
+	DB.Preload("Barang", func(db *gorm.DB) *gorm.DB {
 		return db.Unscoped()
-	})
-
-	// Jika frontend mengirim parameter tanggal, filter query-nya
-	if start != "" && end != "" {
-		query = query.Where("tanggal >= ? AND tanggal <= ?", start, end)
-	}
-
-	// Tarik riwayat belanja beserta nama bahannya, urutkan dari yang terbaru
-	if err := query.Order("tanggal desc, id desc").Find(&beli).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
-
-	return c.JSON(beli)
+	}).Where("tanggal = ?", tanggal).Order("id desc").Find(&rusak)
+	return c.JSON(rusak)
 }
 
-// HANDLER INVENTORY: TUTUP BUKU & LAPORAN
+func CreateBarangRusak(c *fiber.Ctx) error {
+	var input struct {
+		Tanggal    string `json:"tanggal"`
+		BarangID   uint   `json:"barang_id"`
+		Qty        int    `json:"qty"`
+		Keterangan string `json:"keterangan"`
+	}
+	if err := c.BodyParser(&input); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Format salah"})
+	}
+
+	tgl, _ := time.Parse("2006-01-02", input.Tanggal)
+
+	rusak := models.BarangRusak{
+		Tanggal:    tgl,
+		BarangID:   input.BarangID,
+		Qty:        input.Qty,
+		Keterangan: input.Keterangan,
+	}
+
+	if err := DB.Create(&rusak).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"message": "Barang afkir/gratis berhasil dicatat!"})
+}
+
+func DeleteBarangRusak(c *fiber.Ctx) error {
+	id := c.Params("id")
+
+	// Cukup hapus datanya. Mesin Tutup Buku akan otomatis menyesuaikan diri malam harinya!
+	if err := DB.Unscoped().Delete(&models.BarangRusak{}, id).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Gagal menghapus data afkir: " + err.Error()})
+	}
+
+	return c.JSON(fiber.Map{"message": "Data afkir berhasil dibatalkan!"})
+}
+
+// TUTUP BUKU & LAPORAN
 
 // 1. FUNGSI TUTUP BUKU BULLETPROOF (Anti Zona Waktu, Mapping Error & Plural Table)
 func TutupBukuHarian(c *fiber.Ctx) error {
@@ -761,7 +644,27 @@ func GetJurnalTutupBuku(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"jurnal": jurnal, "sisa": sisaAkhir})
 }
 
-// HANDLER INVENTORY: STOCK OPNAME (SIDAK GUDANG)
+// KONVERSI (TARIK SISA KEMARIN)
+func GetSisaLayakJualKemarin(c *fiber.Ctx) error {
+	tgl := c.Query("tanggal")
+
+	var sisaAktif []models.SisaLayakJual
+
+	// RUMUS PINTAR: Hapus syarat qty_sisa > 0
+	// Agar jika hari ini kita kirim lebih banyak dari yang dimasak (ambil stok kemarin),
+	// angka pengurangnya (minus) bisa ikut menjumlahkan dan menyeimbangkan stok besok!
+	err := DB.Joins("JOIN barangs ON barangs.id = sisa_layak_juals.barang_id").
+		Where("DATE(sisa_layak_juals.tanggal) >= (CAST(? AS DATE) - (barangs.masa_simpan * INTERVAL '1 day'))", tgl).
+		Where("DATE(sisa_layak_juals.tanggal) < CAST(? AS DATE)", tgl).
+		Find(&sisaAktif).Error
+
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(sisaAktif)
+}
+
+// STOCK OPNAME (SIDAK GUDANG)
 func GetOpname(c *fiber.Ctx) error {
 	var opname []models.StockOpname
 	DB.Preload("Bahan").Order("id desc").Limit(50).Find(&opname)
@@ -805,74 +708,4 @@ func CreateOpname(c *fiber.Ctx) error {
 	tx.Commit()
 
 	return c.JSON(fiber.Map{"message": "Stock Opname berhasil dicatat!"})
-}
-
-// HANDLER INVENTORY: KONVERSI (TARIK SISA KEMARIN)
-func GetSisaLayakJualKemarin(c *fiber.Ctx) error {
-	tgl := c.Query("tanggal")
-
-	var sisaAktif []models.SisaLayakJual
-
-	// RUMUS PINTAR: Hapus syarat qty_sisa > 0
-	// Agar jika hari ini kita kirim lebih banyak dari yang dimasak (ambil stok kemarin),
-	// angka pengurangnya (minus) bisa ikut menjumlahkan dan menyeimbangkan stok besok!
-	err := DB.Joins("JOIN barangs ON barangs.id = sisa_layak_juals.barang_id").
-		Where("DATE(sisa_layak_juals.tanggal) >= (CAST(? AS DATE) - (barangs.masa_simpan * INTERVAL '1 day'))", tgl).
-		Where("DATE(sisa_layak_juals.tanggal) < CAST(? AS DATE)", tgl).
-		Find(&sisaAktif).Error
-
-	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
-	return c.JSON(sisaAktif)
-}
-
-// HANDLER INVENTORY: BARANG RUSAK / AFKIR / GRATIS
-func GetBarangRusak(c *fiber.Ctx) error {
-	tanggal := c.Query("tanggal")
-	if tanggal == "" {
-		tanggal = time.Now().Format("2006-01-02")
-	}
-	var rusak []models.BarangRusak
-	DB.Preload("Barang", func(db *gorm.DB) *gorm.DB {
-		return db.Unscoped()
-	}).Where("tanggal = ?", tanggal).Order("id desc").Find(&rusak)
-	return c.JSON(rusak)
-}
-
-func CreateBarangRusak(c *fiber.Ctx) error {
-	var input struct {
-		Tanggal    string `json:"tanggal"`
-		BarangID   uint   `json:"barang_id"`
-		Qty        int    `json:"qty"`
-		Keterangan string `json:"keterangan"`
-	}
-	if err := c.BodyParser(&input); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "Format salah"})
-	}
-
-	tgl, _ := time.Parse("2006-01-02", input.Tanggal)
-
-	rusak := models.BarangRusak{
-		Tanggal:    tgl,
-		BarangID:   input.BarangID,
-		Qty:        input.Qty,
-		Keterangan: input.Keterangan,
-	}
-
-	if err := DB.Create(&rusak).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
-	return c.JSON(fiber.Map{"message": "Barang afkir/gratis berhasil dicatat!"})
-}
-
-func DeleteBarangRusak(c *fiber.Ctx) error {
-	id := c.Params("id")
-
-	// Cukup hapus datanya. Mesin Tutup Buku akan otomatis menyesuaikan diri malam harinya!
-	if err := DB.Unscoped().Delete(&models.BarangRusak{}, id).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Gagal menghapus data afkir: " + err.Error()})
-	}
-
-	return c.JSON(fiber.Map{"message": "Data afkir berhasil dibatalkan!"})
 }
