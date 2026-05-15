@@ -235,6 +235,41 @@ func UpdateStatusPembelian(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Status pembayaran berhasil diupdate!"})
 }
 
+// FUNGSI BARU: BATALKAN PEMBELIAN & REFUND STOK/KAS
+func DeletePembelianBahan(c *fiber.Ctx) error {
+	id := c.Params("id")
+	tx := DB.Begin()
+
+	var p models.PembelianBahan
+	if err := tx.First(&p, id).Error; err != nil {
+		tx.Rollback()
+		return c.Status(404).JSON(fiber.Map{"error": "Data pembelian tidak ditemukan"})
+	}
+
+	// 1. Tarik Kembali (Kurangi) Stok dari Master Bahan
+	if err := tx.Model(&models.Bahan{}).Where("id = ?", p.BahanID).
+		Update("stok", gorm.Expr("stok - ?", p.Qty)).Error; err != nil {
+		tx.Rollback()
+		return c.Status(500).JSON(fiber.Map{"error": "Gagal mengembalikan stok"})
+	}
+
+	// 2. Tarik Uang Kembali dari Kas (Hanya jika statusnya sudah Lunas)
+	var settingKas models.PengaturanSistem
+	tx.Where("key = ?", "ENABLE_KAS_SYNC").First(&settingKas)
+
+	if settingKas.Value == "true" && p.IsLunas {
+		// Gunakan kode referensi yang sama dengan yang kita buat di UpdateStatusPembelian
+		noNotaRefBeli := fmt.Sprintf("BELI-%d", p.ID)
+		tx.Unscoped().Where("no_nota_ref = ?", noNotaRefBeli).Delete(&models.TransaksiKas{})
+	}
+
+	// 3. Hapus Permanen Riwayat Pembelian Ini
+	tx.Unscoped().Delete(&p)
+
+	tx.Commit()
+	return c.JSON(fiber.Map{"message": "Pembelian dibatalkan, stok dikurangi, dan kas ditarik kembali!"})
+}
+
 // HANDLER INVENTORY: MASTER RESEP
 func GetResep(c *fiber.Ctx) error {
 	var resep []models.Resep
@@ -333,7 +368,9 @@ func GetProduksiMasak(c *fiber.Ctx) error {
 		tanggal = time.Now().Format("2006-01-02")
 	}
 	var masak []models.ProduksiMasak
-	DB.Preload("Resep").Where("tanggal = ?", tanggal).Order("id desc").Find(&masak)
+	DB.Preload("Resep", func(db *gorm.DB) *gorm.DB {
+		return db.Unscoped()
+	}).Where("tanggal = ?", tanggal).Order("id desc").Find(&masak)
 	return c.JSON(masak)
 }
 
@@ -422,7 +459,9 @@ func GetProduksiMatang(c *fiber.Ctx) error {
 		tanggal = time.Now().Format("2006-01-02")
 	}
 	var matang []models.ProduksiMatang
-	DB.Preload("Barang").Where("tanggal = ?", tanggal).Order("id desc").Find(&matang)
+	DB.Preload("Barang", func(db *gorm.DB) *gorm.DB {
+		return db.Unscoped()
+	}).Where("tanggal = ?", tanggal).Order("id desc").Find(&matang)
 	return c.JSON(matang)
 }
 
@@ -497,7 +536,9 @@ func GetPembelianBahan(c *fiber.Ctx) error {
 
 	var beli []models.PembelianBahan
 
-	query := DB.Preload("Bahan")
+	query := DB.Preload("Bahan", func(db *gorm.DB) *gorm.DB {
+		return db.Unscoped()
+	})
 
 	// Jika frontend mengirim parameter tanggal, filter query-nya
 	if start != "" && end != "" {
@@ -706,7 +747,7 @@ func GetJurnalTutupBuku(c *fiber.Ctx) error {
 	var sisaAkhir []models.SisaLayakJual
 	for _, rs := range rawSisa {
 		var b models.Barang
-		DB.First(&b, rs.BarangID)
+		DB.Unscoped().First(&b, rs.BarangID)
 		sisaAkhir = append(sisaAkhir, models.SisaLayakJual{
 			BarangID: b.ID,
 			Barang:   b,
@@ -714,7 +755,9 @@ func GetJurnalTutupBuku(c *fiber.Ctx) error {
 		})
 	}
 
-	DB.Preload("Resep").Where("tanggal = ?", tgl).Find(&jurnal)
+	DB.Preload("Resep", func(db *gorm.DB) *gorm.DB {
+		return db.Unscoped()
+	}).Where("tanggal = ?", tgl).Find(&jurnal)
 	return c.JSON(fiber.Map{"jurnal": jurnal, "sisa": sisaAkhir})
 }
 
@@ -791,7 +834,9 @@ func GetBarangRusak(c *fiber.Ctx) error {
 		tanggal = time.Now().Format("2006-01-02")
 	}
 	var rusak []models.BarangRusak
-	DB.Preload("Barang").Where("tanggal = ?", tanggal).Order("id desc").Find(&rusak)
+	DB.Preload("Barang", func(db *gorm.DB) *gorm.DB {
+		return db.Unscoped()
+	}).Where("tanggal = ?", tanggal).Order("id desc").Find(&rusak)
 	return c.JSON(rusak)
 }
 

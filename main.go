@@ -1628,6 +1628,29 @@ func BatalkanPesanan(c *fiber.Ctx) error {
 		return c.Status(404).JSON(fiber.Map{"error": "Pesanan tidak ditemukan"})
 	}
 
+	// ==============================================================
+	// BARU: REFUND KEMASAN KUSTOM JIKA SUDAH TERPOTONG TUTUP BUKU
+	// ==============================================================
+	var details []models.NotaPesananDetail
+	// Tarik detail pesanan kustom yang gemboknya SUDAH TERKUNCI (true)
+	tx.Preload("KemasanDetail").Where("nota_pesanan_id = ? AND is_kemasan_terpotong = ?", id, true).Find(&details)
+
+	for _, pk := range details {
+		// Pastikan ini barang kustom (BarangID nil) dan punya kemasan
+		if pk.BarangID == nil && len(pk.KemasanDetail) > 0 {
+			for _, k := range pk.KemasanDetail {
+				totalRefund := float64(pk.Banyak) * k.Kebutuhan
+				// Kembalikan (Refund) stok kardus ke master bahan
+				tx.Model(&models.Bahan{}).Where("id = ?", k.BahanID).
+					Update("stok", gorm.Expr("stok + ?", totalRefund))
+			}
+		}
+
+		// BUKA GEMBOKNYA: Agar statusnya kembali sinkron
+		tx.Model(&models.NotaPesananDetail{}).Where("id = ?", pk.ID).Update("is_kemasan_terpotong", false)
+	}
+	// ==============================================================
+
 	// 1. Ubah status
 	if err := tx.Model(&pesanan).Update("status", "DIBATALKAN").Error; err != nil {
 		tx.Rollback()
@@ -2024,6 +2047,7 @@ func main() {
 	api.Get("/pembelian", RequireRole(RoleSuperadmin), GetPembelianBahan)
 	api.Post("/pembelian", RequireRole(RoleSuperadmin), CreatePembelianBahan)
 	api.Put("/pembelian/:id/status", RequireRole(RoleSuperadmin), UpdateStatusPembelian)
+	api.Delete("/pembelian/:id", RequireRole(RoleSuperadmin), DeletePembelianBahan)
 
 	// RESEP
 	api.Get("/resep", RequireRole(RoleSuperadmin), GetResep)
