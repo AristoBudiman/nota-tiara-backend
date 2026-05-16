@@ -3,6 +3,8 @@ FROM golang:1.25-alpine
 # Install Air untuk live-reloading lokal
 RUN go install github.com/cosmtrek/air@v1.49.0
 
+RUN go install github.com/swaggo/swag/cmd/swag@latest
+
 WORKDIR /app
 
 # Copy dependency

@@ -176,6 +176,7 @@ func CreateNota(c *fiber.Ctx) error {
 func UpdateNota(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var input struct {
+		TanggalKirim string  `json:"tanggal_kirim"`
 		AssignedTo   uint    `json:"assigned_to"`
 		Status       string  `json:"status"`
 		IsLunas      bool    `json:"is_lunas"`
@@ -192,6 +193,11 @@ func UpdateNota(c *fiber.Ctx) error {
 
 	if err := c.BodyParser(&input); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	tglBaru, errDate := time.Parse("2006-01-02", input.TanggalKirim)
+	if errDate != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Format tanggal tidak valid"})
 	}
 
 	for _, d := range input.Details {
@@ -239,6 +245,7 @@ func UpdateNota(c *fiber.Ctx) error {
 	totalBayarAkhir := totalKirim - totalRetur - input.TotalDiskon - input.TotalVoucher
 
 	DB.Model(&models.Nota{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"tanggal_kirim": tglBaru,
 		"jumlah_kirim":  totalKirim, // <--- 5. WAJIB UPDATE TOTAL KIRIM DI HEADER
 		"jumlah_retur":  totalRetur,
 		"total_diskon":  input.TotalDiskon,

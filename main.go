@@ -9,11 +9,14 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/swagger"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/joho/godotenv"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+
+	_ "backend/docs"
 )
 
 var DB *gorm.DB
@@ -142,7 +145,16 @@ func connectDB() {
 	}
 }
 
-// LOGIN
+// LoginAdmin godoc
+// @Summary Autentikasi User (Login)
+// @Description Endpoint publik untuk mendapatkan JWT Token berdasarkan kredensial Superadmin atau Sales.
+// @Tags Authentication
+// @Accept json
+// @Produce json
+// @Param payload body map[string]string true "Format JSON dengan key: username, password"
+// @Success 200 {object} map[string]interface{} "Login sukses beserta token"
+// @Failure 401 {object} map[string]interface{} "Username atau Password salah"
+// @Router /login [post]
 func LoginAdmin(c *fiber.Ctx) error {
 	var input struct {
 		Username string `json:"username"`
@@ -231,6 +243,18 @@ func RequireRole(allowedRoles ...string) fiber.Handler {
 }
 
 // MAIN
+//
+// @title Tiara Bakery Master API
+// @version 1.0
+// @description Dokumentasi API Internal untuk Sistem Inventory, Nota, dan Kas.
+// @contact.name Aristo Budiman
+// @host localhost:3000
+// @BasePath /
+//
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description Masukkan token dengan format: "Bearer {token_jwt}"
 func main() {
 	connectDB()
 
@@ -243,6 +267,11 @@ func main() {
 	app.Get("/", func(c *fiber.Ctx) error {
 		return c.SendString("Backend Tiara Connected with Env!")
 	})
+
+	if os.Getenv("APP_ENV") == "development" {
+		app.Get("/swagger/*", swagger.HandlerDefault)
+		log.Println("⚠️ SWAGGER AKTIF: http://localhost:3000/swagger/index.html")
+	}
 
 	app.Post("/login", LoginAdmin) // Endpoint Publik (Bisa diakses tanpa token)
 

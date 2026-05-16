@@ -1,0 +1,47 @@
+basePath: /
+host: localhost:3000
+info:
+  contact:
+    name: Aristo Budiman
+  description: Dokumentasi API Internal untuk Sistem Inventory, Nota, dan Kas.
+  title: Tiara Bakery Master API
+  version: "1.0"
+paths:
+  /login:
+    post:
+      consumes:
+      - application/json
+      description: Endpoint publik untuk mendapatkan JWT Token berdasarkan kredensial
+        Superadmin atau Sales.
+      parameters:
+      - description: 'Format JSON dengan key: username, password'
+        in: body
+        name: payload
+        required: true
+        schema:
+          additionalProperties:
+            type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Login sukses beserta token
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Username atau Password salah
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Autentikasi User (Login)
+      tags:
+      - Authentication
+securityDefinitions:
+  BearerAuth:
+    description: 'Masukkan token dengan format: "Bearer {token_jwt}"'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
