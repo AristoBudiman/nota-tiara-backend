@@ -8,6 +8,17 @@ import (
 )
 
 // MASTER BAHAN & PEMBELIAN
+//
+// GetBahan godoc
+// @Summary Ambil Seluruh Master Bahan
+// @Description Mengambil daftar master bahan baku gudang, diurutkan berdasarkan urutan tampilan.
+// @Tags 05. Master Bahan Baku
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {array} models.Bahan "List data bahan berhasil ditarik"
+// @Failure 500 {object} models.ErrorResponse "Internal Server Error"
+// @Router /api/bahan [get]
 func GetBahan(c *fiber.Ctx) error {
 	var bahan []models.Bahan
 	if err := DB.Order("urutan asc").Find(&bahan).Error; err != nil {
@@ -16,6 +27,18 @@ func GetBahan(c *fiber.Ctx) error {
 	return c.JSON(bahan)
 }
 
+// CreateBahan godoc
+// @Summary Buat Master Bahan Baru
+// @Description Menyimpan data master bahan baku baru ke gudang.
+// @Tags 05. Master Bahan Baku
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param payload body models.BahanInput true "Data Bahan utuh"
+// @Success 200 {object} models.Bahan "Bahan berhasil dibuat"
+// @Failure 400 {object} models.ErrorResponse "Format JSON tidak valid"
+// @Failure 500 {object} models.ErrorResponse "Kesalahan eksekusi database"
+// @Router /api/bahan [post]
 func CreateBahan(c *fiber.Ctx) error {
 	var input models.Bahan
 	if err := c.BodyParser(&input); err != nil {
@@ -32,6 +55,18 @@ func CreateBahan(c *fiber.Ctx) error {
 	return c.JSON(input)
 }
 
+// UpdateBahan godoc
+// @Summary Update Master Bahan
+// @Description Memperbarui profil, satuan, atau harga bahan baku berdasarkan ID.
+// @Tags 05. Master Bahan Baku
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "ID Bahan"
+// @Param payload body models.BahanInput true "Data update bahan utuh"
+// @Success 200 {object} models.MessageResponse "Bahan berhasil diupdate"
+// @Failure 404 {object} models.ErrorResponse "Bahan tidak ditemukan"
+// @Router /api/bahan/{id} [put]
 func UpdateBahan(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var input models.Bahan
@@ -48,6 +83,17 @@ func UpdateBahan(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Bahan berhasil diupdate", "data": bahan})
 }
 
+// DeleteBahan godoc
+// @Summary Hapus Master Bahan (Soft Delete)
+// @Description Menghapus master bahan baku dari daftar aktif.
+// @Tags 05. Master Bahan Baku
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "ID Bahan"
+// @Success 200 {object} models.MessageResponse "Bahan berhasil dihapus"
+// @Failure 500 {object} models.ErrorResponse "Internal Server Error"
+// @Router /api/bahan/{id} [delete]
 func DeleteBahan(c *fiber.Ctx) error {
 	id := c.Params("id")
 	if err := DB.Delete(&models.Bahan{}, id).Error; err != nil {
@@ -57,6 +103,17 @@ func DeleteBahan(c *fiber.Ctx) error {
 }
 
 // UBAH URUTAN BAHAN (DRAG & DROP)
+//
+// UpdateUrutanBahan godoc
+// @Summary Update Urutan Tampilan Bahan
+// @Description Memperbarui posisi urutan bahan baku untuk tampilan di form.
+// @Tags 05. Master Bahan Baku
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param payload body []models.UrutanBahanInput true "Array of object key: id, urutan"
+// @Success 200 {object} models.MessageResponse "Urutan bahan berhasil diperbarui"
+// @Router /api/bahan/reorder [put]
 func UpdateUrutanBahan(c *fiber.Ctx) error {
 	var input []struct {
 		ID     uint `json:"id"`
@@ -76,6 +133,16 @@ func UpdateUrutanBahan(c *fiber.Ctx) error {
 }
 
 // HANDLER INVENTORY: MASTER RESEP
+//
+// GetResep godoc
+// @Summary Ambil Seluruh Master Resep
+// @Description Mengambil daftar master resep beserta detail array komponen bahan-bahannya.
+// @Tags 06. Master Resep
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {array} models.Resep "List data resep ditarik"
+// @Router /api/resep [get]
 func GetResep(c *fiber.Ctx) error {
 	var resep []models.Resep
 	// Preload isi resep beserta nama bahan-bahannya
@@ -85,6 +152,17 @@ func GetResep(c *fiber.Ctx) error {
 	return c.JSON(resep)
 }
 
+// CreateResep godoc
+// @Summary Buat Master Resep Baru
+// @Description Menyimpan data master resep baru lengkap dengan komposisi bahannya.
+// @Tags 06. Master Resep
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param payload body models.ResepInput true "Data Resep utuh"
+// @Success 200 {object} models.MessageResponse "Resep berhasil dibuat"
+// @Failure 400 {object} models.ErrorResponse "Format JSON salah"
+// @Router /api/resep [post]
 func CreateResep(c *fiber.Ctx) error {
 	var input struct {
 		NamaResep     string  `json:"nama_resep"`
@@ -117,6 +195,17 @@ func CreateResep(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Resep berhasil dibuat!", "id": resep.ID})
 }
 
+// UpdateResep godoc
+// @Summary Update Master Resep
+// @Description Memperbarui data resep dan list komposisi bahan berdasarkan ID resep.
+// @Tags 06. Master Resep
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "ID Resep"
+// @Param payload body models.ResepInput true "Data Resep utuh"
+// @Success 200 {object} models.MessageResponse "Resep berhasil diupdate"
+// @Router /api/resep/{id} [put]
 func UpdateResep(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var input struct {
@@ -156,6 +245,16 @@ func UpdateResep(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Resep berhasil diupdate!"})
 }
 
+// DeleteResep godoc
+// @Summary Hapus Master Resep (Soft Delete)
+// @Description Menghapus master resep dari daftar aktif.
+// @Tags 06. Master Resep
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "ID Resep"
+// @Success 200 {object} models.MessageResponse "Resep berhasil dihapus"
+// @Router /api/resep/{id} [delete]
 func DeleteResep(c *fiber.Ctx) error {
 	id := c.Params("id")
 	// Soft delete resep, bahan detail akan terikat oleh relasi tapi resepnya hilang

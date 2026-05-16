@@ -1,4 +1,1097 @@
 basePath: /
+definitions:
+  models.AnalisisAsetResponse:
+    properties:
+      awal_prive:
+        example: "2026-05-01"
+        type: string
+      bulan_lalu:
+        additionalProperties: true
+        type: object
+      live:
+        additionalProperties: true
+        type: object
+      prive_bulan_ini:
+        example: 1500000
+        type: number
+      tanggal_analisis:
+        example: "2026-05-16"
+        type: string
+    type: object
+  models.AsetSnapshot:
+    properties:
+      aset_bersih:
+        type: number
+      bulan:
+        description: 'Contoh: 2026-05-01'
+        type: string
+      created_at:
+        type: string
+      id:
+        type: integer
+      total_hutang:
+        type: number
+      total_kas:
+        type: number
+      total_persediaan:
+        type: number
+      total_piutang:
+        type: number
+    type: object
+  models.Bahan:
+    properties:
+      batas_minimum:
+        type: number
+      harga_saat_ini:
+        description: Update otomatis dari pembelian terakhir
+        type: number
+      id:
+        type: integer
+      nama_bahan:
+        type: string
+      satuan:
+        description: gr, ml, pcs
+        type: string
+      stok:
+        type: number
+      urutan:
+        type: integer
+    type: object
+  models.BahanInput:
+    properties:
+      batas_minimum:
+        example: 5000
+        type: number
+      harga_saat_ini:
+        example: 12500
+        type: number
+      nama_bahan:
+        example: Tepung Cakra Kembar
+        type: string
+      satuan:
+        example: gr
+        type: string
+      stok:
+        example: 15000
+        type: number
+    required:
+    - nama_bahan
+    - satuan
+    type: object
+  models.Barang:
+    properties:
+      Urutan:
+        type: integer
+      hargaDefault:
+        format: float64
+        type: number
+      id:
+        type: integer
+      kebutuhan_adonan:
+        description: Berapa gram / fraksi per 1 roti
+        type: number
+      kemasan_detail:
+        items:
+          $ref: '#/definitions/models.BarangKemasan'
+        type: array
+      masa_simpan:
+        description: Default 2 hari
+        type: integer
+      metode_konversi:
+        description: '"Gram" atau "Pcs"'
+        type: string
+      namaBarang:
+        type: string
+      resep:
+        $ref: '#/definitions/models.Resep'
+      resep_id:
+        description: TAMBAHAN MODUL INVENTORY
+        type: integer
+    type: object
+  models.BarangInput:
+    properties:
+      HargaDefault:
+        example: 15000
+        type: number
+      NamaBarang:
+        example: Roti Tawar Spesial
+        type: string
+      kebutuhan_adonan:
+        example: 0.5
+        type: number
+      kemasan_detail:
+        items:
+          $ref: '#/definitions/models.KemasanInput'
+        type: array
+      masa_simpan:
+        example: 3
+        type: integer
+      metode_konversi:
+        example: BAGI
+        type: string
+      resep_id:
+        example: 1
+        type: integer
+    type: object
+  models.BarangKemasan:
+    properties:
+      bahan:
+        $ref: '#/definitions/models.Bahan'
+      bahan_id:
+        type: integer
+      barang_id:
+        type: integer
+      id:
+        type: integer
+      kebutuhan:
+        description: (Bisa pecahan, misal 0.25)
+        type: number
+    type: object
+  models.BarangRusak:
+    properties:
+      barang:
+        $ref: '#/definitions/models.Barang'
+      barang_id:
+        type: integer
+      id:
+        type: integer
+      keterangan:
+        description: 'Contoh: "Dimakan Tikus", "Tester", "Basi"'
+        type: string
+      qty:
+        type: integer
+      tanggal:
+        type: string
+    type: object
+  models.BarangRusakInput:
+    properties:
+      barang_id:
+        example: 5
+        type: integer
+      keterangan:
+        example: Gosong di oven / Dikasihkan ke tetangga
+        type: string
+      qty:
+        example: 5
+        type: integer
+      tanggal:
+        example: "2026-05-16"
+        type: string
+    required:
+    - barang_id
+    - keterangan
+    - qty
+    - tanggal
+    type: object
+  models.CatatanBesarResponse:
+    properties:
+      harga_kirim:
+        example: 750000
+        type: number
+      harga_retur:
+        example: 75000
+        type: number
+      is_harian:
+        example: true
+        type: boolean
+      nama_barang:
+        example: Roti Tawar
+        type: string
+      nama_toko:
+        example: Toko Abadi
+        type: string
+      qty_kirim:
+        example: 50
+        type: integer
+      qty_retur:
+        example: 5
+        type: integer
+      siklus:
+        example: HARIAN
+        type: string
+    type: object
+  models.CatatanPesananResponse:
+    properties:
+      jenis_pengambilan:
+        example: PABRIK
+        type: string
+      nama_barang_bebas:
+        example: Bolu Karamel
+        type: string
+      nama_toko:
+        example: PABRIK
+        type: string
+      total_banyak:
+        example: 25
+        type: integer
+      total_rupiah:
+        example: 875000
+        type: number
+    type: object
+  models.DashboardSalesResponse:
+    properties:
+      aktif:
+        items:
+          $ref: '#/definitions/models.Nota'
+        type: array
+      tugas:
+        items:
+          $ref: '#/definitions/models.Nota'
+        type: array
+      tugas_po:
+        items:
+          $ref: '#/definitions/models.NotaPesanan'
+        type: array
+    type: object
+  models.ErrorResponse:
+    properties:
+      error:
+        example: Terjadi kesalahan pada server
+        type: string
+    type: object
+  models.JurnalTutupBukuResponse:
+    properties:
+      jurnal:
+        items:
+          additionalProperties: true
+          type: object
+        type: array
+      sisa:
+        items:
+          additionalProperties: true
+          type: object
+        type: array
+    type: object
+  models.KasInput:
+    properties:
+      jenis:
+        enum:
+        - MASUK
+        - KELUAR
+        example: KELUAR
+        type: string
+      kategori:
+        enum:
+        - REGULER
+        - PESANAN
+        - BAHAN
+        - RUMAH_TANGGA
+        example: RUMAH_TANGGA
+        type: string
+      keterangan:
+        example: Beli galon dan token listrik
+        type: string
+      no_nota_ref:
+        example: '-'
+        type: string
+      nominal:
+        example: 150000
+        type: number
+      tanggal:
+        example: "2026-05-16"
+        type: string
+    required:
+    - jenis
+    - kategori
+    - nominal
+    - tanggal
+    type: object
+  models.KemasanInput:
+    properties:
+      bahan_id:
+        example: 2
+        type: integer
+      kebutuhan:
+        example: 1.5
+        type: number
+    type: object
+  models.MessageResponse:
+    properties:
+      message:
+        example: Operasi berhasil dilakukan
+        type: string
+    type: object
+  models.NextNotaResponse:
+    properties:
+      no_nota:
+        example: NT/20260427/15-0017
+        type: string
+    type: object
+  models.Nota:
+    properties:
+      IsHarianSnapshot:
+        type: boolean
+      NamaTokoSnapshot:
+        description: SNAPSHOT UNTUK MENGUNCI SEJARAH
+        type: string
+      SiklusSnapshot:
+        type: string
+      assigned_to:
+        type: integer
+      created_at:
+        type: string
+      created_by:
+        description: PELACAK SALES
+        type: integer
+      details:
+        items:
+          $ref: '#/definitions/models.NotaDetail'
+        type: array
+      id:
+        type: integer
+      is_lunas:
+        description: '''KIRIM'' atau ''SELESAI'''
+        type: boolean
+      jumlahKirim:
+        description: Hasil Perhitungan
+        type: number
+      jumlahRetur:
+        description: Total harga retur (Semua barang)
+        type: number
+      noNota:
+        type: string
+      status:
+        type: string
+      tanggalKirim:
+        type: string
+      toko:
+        $ref: '#/definitions/models.Toko'
+      tokoID:
+        type: integer
+      total_diskon:
+        description: <--- BARU
+        type: number
+      total_voucher:
+        description: <--- BARU
+        type: number
+      totalBayar:
+        description: JumlahKirim - JumlahRetur
+        type: number
+      updated_at:
+        type: string
+    type: object
+  models.NotaDetail:
+    properties:
+      NamaBarangSnapshot:
+        description: SNAPSHOT UNTUK MENGUNCI SEJARAH
+        type: string
+      banyakKirim:
+        type: integer
+      banyakRetur:
+        type: integer
+      barang:
+        $ref: '#/definitions/models.Barang'
+      barangID:
+        type: integer
+      hargaJual:
+        type: number
+      hargaKirim:
+        description: BanyakKirim * HargaJual
+        type: number
+      hargaRetur:
+        description: BanyakRetur * HargaJual
+        type: number
+      id:
+        type: integer
+      notaID:
+        type: integer
+    type: object
+  models.NotaDetailInput:
+    properties:
+      banyak_kirim:
+        description: <-- Disesuaikan
+        example: 100
+        type: integer
+      banyak_retur:
+        description: <-- Disesuaikan
+        example: 5
+        type: integer
+      barang_id:
+        example: 12
+        type: integer
+      harga_jual:
+        description: <-- Disesuaikan
+        example: 15000
+        type: number
+      id:
+        description: 0 saat Create baru, isi ID asli saat Update
+        example: 0
+        type: integer
+    required:
+    - banyak_kirim
+    - barang_id
+    - harga_jual
+    type: object
+  models.NotaInput:
+    properties:
+      assigned_to:
+        example: 2
+        type: integer
+      details:
+        items:
+          $ref: '#/definitions/models.NotaDetailInput'
+        type: array
+      is_lunas:
+        example: false
+        type: boolean
+      no_nota:
+        example: NT/20260427/15-0017
+        type: string
+      status:
+        enum:
+        - KIRIM
+        - DIBATALKAN
+        - SELESAI
+        example: KIRIM
+        type: string
+      tanggal_kirim:
+        example: "2026-04-27"
+        type: string
+      toko_id:
+        example: 5
+        type: integer
+      total_diskon:
+        example: 0
+        type: number
+      total_voucher:
+        example: 50000
+        type: number
+    required:
+    - details
+    - no_nota
+    - status
+    - tanggal_kirim
+    - toko_id
+    type: object
+  models.NotaPesanan:
+    properties:
+      NamaTokoSnapshot:
+        description: Catat nama toko saat itu (atau isi "PABRIK")
+        type: string
+      assigned_to:
+        type: integer
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      details:
+        items:
+          $ref: '#/definitions/models.NotaPesananDetail'
+        type: array
+      id:
+        type: integer
+      is_lunas:
+        description: '''BELUM DIAMBIL'' atau ''LUNAS/DIAMBIL'''
+        type: boolean
+      jenisPengambilan:
+        description: '''PABRIK'' atau ''MITRA'''
+        type: string
+      namaPemesan:
+        type: string
+      noNota:
+        type: string
+      ongkir:
+        type: number
+      sisa_tagihan:
+        type: number
+      status:
+        type: string
+      tanggalKirim:
+        type: string
+      toko:
+        $ref: '#/definitions/models.Toko'
+      tokoID:
+        description: Gunakan pointer (*uint) agar bisa bernilai NULL di database jika
+          diambil di Pabrik
+        type: integer
+      total_voucher:
+        description: <--- BARU
+        type: number
+      totalBayar:
+        type: number
+      uang_muka:
+        description: <--- BARU (DP)
+        type: number
+      updated_at:
+        type: string
+    type: object
+  models.NotaPesananDetail:
+    properties:
+      NamaBarangBebas:
+        description: 'Ini menyimpan nama barang dari DB, ATAU nama barang kustom ketikan
+          manual (misal: "Kue Tart")'
+        type: string
+      banyak:
+        type: integer
+      barang:
+        $ref: '#/definitions/models.Barang'
+      barangID:
+        description: Pointer agar bisa NULL untuk barang kustom yang tidak ada di
+          Master Barang
+        type: integer
+      gramasi:
+        type: number
+      hargaJual:
+        type: number
+      id:
+        type: integer
+      is_kemasan_terpotong:
+        type: boolean
+      kemasan_detail:
+        items:
+          $ref: '#/definitions/models.NotaPesananDetailKemasan'
+        type: array
+      notaPesananID:
+        type: integer
+      resep_id:
+        description: Tambahan untuk persiapan Modul Inventory Dapur
+        type: integer
+      subtotal:
+        description: Banyak * HargaJual
+        type: number
+    type: object
+  models.NotaPesananDetailInput:
+    properties:
+      banyak:
+        example: 50
+        type: integer
+      barang_id:
+        description: Bisa null jika barang custom
+        example: 12
+        type: integer
+      gramasi:
+        example: 500
+        type: number
+      harga_jual:
+        example: 35000
+        type: number
+      kemasan_detail:
+        items:
+          $ref: '#/definitions/models.NotaPesananKemasanInput'
+        type: array
+      nama_barang_bebas:
+        example: Bolu Karamel Custom
+        type: string
+      resep_id:
+        example: 3
+        type: integer
+    required:
+    - banyak
+    - harga_jual
+    - nama_barang_bebas
+    type: object
+  models.NotaPesananDetailKemasan:
+    properties:
+      bahan:
+        $ref: '#/definitions/models.Bahan'
+      bahan_id:
+        type: integer
+      id:
+        type: integer
+      kebutuhan:
+        description: Butuh berapa pcs per 1 roti kustom
+        type: number
+      nota_pesanan_detail_id:
+        type: integer
+    type: object
+  models.NotaPesananInput:
+    properties:
+      assigned_to:
+        example: 2
+        type: integer
+      details:
+        items:
+          $ref: '#/definitions/models.NotaPesananDetailInput'
+        type: array
+      is_lunas:
+        example: false
+        type: boolean
+      jenis_pengambilan:
+        enum:
+        - PABRIK
+        - MITRA
+        example: MITRA
+        type: string
+      nama_pemesan:
+        example: Ibu Rina
+        type: string
+      no_nota:
+        example: PO/20260430/15-0001
+        type: string
+      ongkir:
+        example: 15000
+        type: number
+      status:
+        enum:
+        - MENUNGGU
+        - DIPROSES
+        - DIKIRIM
+        - DIAMBIL
+        - DIBATALKAN
+        example: MENUNGGU
+        type: string
+      tanggal_kirim:
+        example: "2026-04-30"
+        type: string
+      toko_id:
+        description: Null jika ambil di pabrik
+        example: 15
+        type: integer
+      total_voucher:
+        example: 10000
+        type: number
+      uang_muka:
+        example: 50000
+        type: number
+    required:
+    - details
+    - jenis_pengambilan
+    - nama_pemesan
+    - no_nota
+    - status
+    - tanggal_kirim
+    type: object
+  models.NotaPesananKemasanInput:
+    properties:
+      bahan_id:
+        example: 2
+        type: integer
+      kebutuhan:
+        example: 1.5
+        type: number
+    required:
+    - bahan_id
+    - kebutuhan
+    type: object
+  models.PembelianBahan:
+    properties:
+      bahan:
+        $ref: '#/definitions/models.Bahan'
+      bahan_id:
+        type: integer
+      harga_beli_satuan:
+        description: Histori harga pada hari H
+        type: number
+      id:
+        type: integer
+      is_lunas:
+        type: boolean
+      keterangan:
+        type: string
+      qty:
+        type: number
+      tanggal:
+        type: string
+      total_biaya:
+        type: number
+    type: object
+  models.PembelianBahanInput:
+    properties:
+      bahan_id:
+        example: 3
+        type: integer
+      harga_beli_satuan:
+        example: 15000
+        type: number
+      is_lunas:
+        example: true
+        type: boolean
+      keterangan:
+        example: Beli di Pasar Legi
+        type: string
+      qty:
+        example: 50
+        type: number
+      tanggal:
+        example: "2026-05-16"
+        type: string
+    required:
+    - bahan_id
+    - harga_beli_satuan
+    - qty
+    - tanggal
+    type: object
+  models.PengaturanKasResponse:
+    properties:
+      is_active:
+        example: true
+        type: boolean
+    type: object
+  models.ProduksiMasak:
+    properties:
+      id:
+        type: integer
+      jumlah_batch:
+        description: 'Berapa resep dimasak (misal: 2.5)'
+        type: number
+      resep:
+        $ref: '#/definitions/models.Resep'
+      resep_id:
+        type: integer
+      tanggal:
+        type: string
+      total_adonan:
+        description: JumlahBatch * TargetGramasi (Prediksi Sistem)
+        type: number
+    type: object
+  models.ProduksiMasakInput:
+    properties:
+      jumlah_batch:
+        example: 1.5
+        type: number
+      resep_id:
+        example: 2
+        type: integer
+      tanggal:
+        example: "2026-05-16"
+        type: string
+    required:
+    - jumlah_batch
+    - resep_id
+    - tanggal
+    type: object
+  models.ProduksiMatang:
+    properties:
+      barang:
+        $ref: '#/definitions/models.Barang'
+      barang_id:
+        type: integer
+      id:
+        type: integer
+      qty_matang:
+        description: Fisik utuh siap jual
+        type: integer
+      tanggal:
+        type: string
+    type: object
+  models.ProduksiMatangInput:
+    properties:
+      barang_id:
+        example: 5
+        type: integer
+      qty_matang:
+        example: 150
+        type: integer
+      tanggal:
+        example: "2026-05-16"
+        type: string
+    required:
+    - barang_id
+    - qty_matang
+    - tanggal
+    type: object
+  models.ProfilTiara:
+    properties:
+      alamat:
+        type: string
+      id:
+        type: integer
+      logoPath:
+        type: string
+      nama:
+        type: string
+      noHP:
+        type: string
+      noTelp:
+        type: string
+    type: object
+  models.RangkumanPerTokoResponse:
+    properties:
+      nama_barang:
+        example: Roti Manis
+        type: string
+      persentase:
+        example: 10
+        type: number
+      total_kirim:
+        example: 100
+        type: integer
+      total_laku:
+        example: 90
+        type: integer
+      total_retur:
+        example: 10
+        type: integer
+    type: object
+  models.RangkumanPesananResponse:
+    properties:
+      detail_barang:
+        items:
+          additionalProperties: true
+          type: object
+        type: array
+      per_titik:
+        items:
+          additionalProperties: true
+          type: object
+        type: array
+      total_diskon:
+        example: 100000
+        type: number
+      total_pendapatan:
+        example: 5000000
+        type: number
+      total_pesanan:
+        example: 10
+        type: integer
+    type: object
+  models.RangkumanResponse:
+    properties:
+      diskon:
+        type: number
+      kirim:
+        type: number
+      pendapatan:
+        type: number
+      perBarang:
+        items:
+          $ref: '#/definitions/models.RekapBarang'
+        type: array
+      perToko:
+        items:
+          $ref: '#/definitions/models.RekapToko'
+        type: array
+      persentase:
+        type: number
+      retur:
+        type: number
+    type: object
+  models.RekapBarang:
+    properties:
+      nama:
+        type: string
+      persentase:
+        type: number
+      qty_kirim:
+        type: number
+      qty_laku:
+        type: number
+      qty_retur:
+        type: number
+    type: object
+  models.RekapToko:
+    properties:
+      diskon:
+        type: number
+      id:
+        type: integer
+      kirim:
+        type: number
+      nama:
+        type: string
+      pendapatan:
+        type: number
+      persentase:
+        type: number
+      retur:
+        type: number
+    type: object
+  models.Resep:
+    properties:
+      bahan_detail:
+        items:
+          $ref: '#/definitions/models.ResepBahan'
+        type: array
+      id:
+        type: integer
+      nama_resep:
+        type: string
+      target_gramasi:
+        description: Total adonan matang dr 1 Resep
+        type: number
+    type: object
+  models.ResepBahan:
+    properties:
+      bahan:
+        $ref: '#/definitions/models.Bahan'
+      bahan_id:
+        type: integer
+      id:
+        type: integer
+      kebutuhan:
+        description: Butuh berapa gr/ml/pcs
+        type: number
+      resep_id:
+        type: integer
+    type: object
+  models.ResepBahanInput:
+    properties:
+      bahan_id:
+        example: 2
+        type: integer
+      kebutuhan:
+        example: 250.5
+        type: number
+    required:
+    - bahan_id
+    - kebutuhan
+    type: object
+  models.ResepInput:
+    properties:
+      bahan_detail:
+        items:
+          $ref: '#/definitions/models.ResepBahanInput'
+        type: array
+      nama_resep:
+        example: Adonan Roti Manis
+        type: string
+      target_gramasi:
+        example: 2000
+        type: number
+    required:
+    - bahan_detail
+    - nama_resep
+    - target_gramasi
+    type: object
+  models.SisaLayakJual:
+    properties:
+      barang:
+        $ref: '#/definitions/models.Barang'
+      barang_id:
+        type: integer
+      id:
+        type: integer
+      qty_sisa:
+        type: integer
+      tanggal:
+        description: Sisa yang diakui di akhir hari ini
+        type: string
+    type: object
+  models.SnapshotAsetInput:
+    properties:
+      bulan:
+        example: "2026-05-01"
+        type: string
+    required:
+    - bulan
+    type: object
+  models.StatusPembelianInput:
+    properties:
+      is_lunas:
+        example: true
+        type: boolean
+    required:
+    - is_lunas
+    type: object
+  models.StockOpname:
+    properties:
+      bahan:
+        $ref: '#/definitions/models.Bahan'
+      bahan_id:
+        type: integer
+      id:
+        type: integer
+      keterangan:
+        type: string
+      selisih:
+        description: Fisik - Sistem
+        type: number
+      stok_fisik:
+        description: Input nyata dari timbangan gudang
+        type: number
+      stok_sistem:
+        description: Stok di komputer sebelum sidak
+        type: number
+      tanggal:
+        type: string
+    type: object
+  models.StockOpnameInput:
+    properties:
+      bahan_id:
+        example: 3
+        type: integer
+      keterangan:
+        example: Tumpah 500 gram
+        type: string
+      stok_fisik:
+        example: 4500.5
+        type: number
+    required:
+    - bahan_id
+    - stok_fisik
+    type: object
+  models.ToggleKasInput:
+    properties:
+      is_active:
+        example: true
+        type: boolean
+    required:
+    - is_active
+    type: object
+  models.Toko:
+    properties:
+      IsHarian:
+        type: boolean
+      alamat:
+        type: string
+      id:
+        type: integer
+      namaToko:
+        type: string
+      noTelp:
+        type: string
+      siklusDua:
+        type: boolean
+      siklusJumatSelasa:
+        type: boolean
+      siklusKamisSenin:
+        description: Flag Siklus
+        type: boolean
+      siklusSabtuRabu:
+        type: boolean
+    type: object
+  models.TransaksiKas:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      id:
+        type: integer
+      jenis:
+        type: string
+      kategori:
+        type: string
+      keterangan:
+        type: string
+      no_nota_ref:
+        type: string
+      nominal:
+        type: number
+      tanggal:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  models.TutupBukuInput:
+    properties:
+      tanggal:
+        example: "2026-05-16"
+        type: string
+    required:
+    - tanggal
+    type: object
+  models.UrutanBahanInput:
+    properties:
+      id:
+        example: 1
+        type: integer
+      urutan:
+        example: 2
+        type: integer
+    required:
+    - id
+    - urutan
+    type: object
+  models.UrutanBarangInput:
+    properties:
+      id:
+        example: 1
+        type: integer
+      urutan:
+        example: 2
+        type: integer
+    type: object
 host: localhost:3000
 info:
   contact:
@@ -7,6 +1100,1630 @@ info:
   title: Tiara Bakery Master API
   version: "1.0"
 paths:
+  /api/aset/live:
+    get:
+      consumes:
+      - application/json
+      description: Mengkalkulasi total harta kekayaan real-time (Kas, Piutang, Persediaan
+        Gudang) dikurangi Hutang sampai tanggal target.
+      parameters:
+      - description: 'Tanggal batas akhir kalkulasi (Format: YYYY-MM-DD)'
+        in: query
+        name: date
+        type: string
+      - description: 'Tanggal mulai untuk hitung total Prive/Pengeluaran RT (Format:
+          YYYY-MM-DD)'
+        in: query
+        name: start_date
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Data live aset berhasil ditarik
+          schema:
+            $ref: '#/definitions/models.AnalisisAsetResponse'
+      security:
+      - BearerAuth: []
+      summary: Dashboard Aset Live
+      tags:
+      - 15. Analisis & Aset
+  /api/aset/riwayat:
+    get:
+      consumes:
+      - application/json
+      description: Menarik riwayat snapshot kekayaan per bulan, diurutkan dari yang
+        terbaru.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Data riwayat aset ditarik
+          schema:
+            items:
+              $ref: '#/definitions/models.AsetSnapshot'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: Riwayat Pertumbuhan Aset
+      tags:
+      - 15. Analisis & Aset
+  /api/aset/snapshot:
+    post:
+      consumes:
+      - application/json
+      description: Mengunci dan menyimpan nilai kalkulasi aset akhir bulan ke dalam
+        riwayat, agar pertumbuhan kekayaan (profit bersih bulanan) bisa diukur dengan
+        akurat.
+      parameters:
+      - description: Tanggal / Bulan kunci
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/models.SnapshotAsetInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Snapshot berhasil dikunci
+          schema:
+            $ref: '#/definitions/models.MessageResponse'
+        "400":
+          description: Format tanggal salah
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Kunci Snapshot Aset (Tutup Bulan)
+      tags:
+      - 15. Analisis & Aset
+  /api/bahan:
+    get:
+      consumes:
+      - application/json
+      description: Mengambil daftar master bahan baku gudang, diurutkan berdasarkan
+        urutan tampilan.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List data bahan berhasil ditarik
+          schema:
+            items:
+              $ref: '#/definitions/models.Bahan'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Ambil Seluruh Master Bahan
+      tags:
+      - 05. Master Bahan Baku
+    post:
+      consumes:
+      - application/json
+      description: Menyimpan data master bahan baku baru ke gudang.
+      parameters:
+      - description: Data Bahan utuh
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/models.BahanInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Bahan berhasil dibuat
+          schema:
+            $ref: '#/definitions/models.Bahan'
+        "400":
+          description: Format JSON tidak valid
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Kesalahan eksekusi database
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Buat Master Bahan Baru
+      tags:
+      - 05. Master Bahan Baku
+  /api/bahan/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Menghapus master bahan baku dari daftar aktif.
+      parameters:
+      - description: ID Bahan
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Bahan berhasil dihapus
+          schema:
+            $ref: '#/definitions/models.MessageResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Hapus Master Bahan (Soft Delete)
+      tags:
+      - 05. Master Bahan Baku
+    put:
+      consumes:
+      - application/json
+      description: Memperbarui profil, satuan, atau harga bahan baku berdasarkan ID.
+      parameters:
+      - description: ID Bahan
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Data update bahan utuh
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/models.BahanInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Bahan berhasil diupdate
+          schema:
+            $ref: '#/definitions/models.MessageResponse'
+        "404":
+          description: Bahan tidak ditemukan
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update Master Bahan
+      tags:
+      - 05. Master Bahan Baku
+  /api/bahan/reorder:
+    put:
+      consumes:
+      - application/json
+      description: Memperbarui posisi urutan bahan baku untuk tampilan di form.
+      parameters:
+      - description: 'Array of object key: id, urutan'
+        in: body
+        name: payload
+        required: true
+        schema:
+          items:
+            $ref: '#/definitions/models.UrutanBahanInput'
+          type: array
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Urutan bahan berhasil diperbarui
+          schema:
+            $ref: '#/definitions/models.MessageResponse'
+      security:
+      - BearerAuth: []
+      summary: Update Urutan Tampilan Bahan
+      tags:
+      - 05. Master Bahan Baku
+  /api/barangs:
+    get:
+      consumes:
+      - application/json
+      description: Mengambil daftar master barang lengkap dengan relasi resep dan
+        kemasan, diurutkan berdasarkan urutan tampilan.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List data barang berhasil ditarik
+          schema:
+            items:
+              $ref: '#/definitions/models.Barang'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Ambil Seluruh Master Barang
+      tags:
+      - 03. Master Barang
+    post:
+      consumes:
+      - application/json
+      description: Menyimpan data master barang baru beserta kebutuhan kemasannya
+        (kardus/plastik) jika ada.
+      parameters:
+      - description: Data Barang utuh
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/models.BarangInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Barang dan Kemasan berhasil dibuat
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Format JSON tidak valid
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal menyimpan ke database
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Buat Master Barang Baru
+      tags:
+      - 03. Master Barang
+  /api/barangs/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Menghapus master barang dari daftar aktif (masuk ke tong sampah).
+      parameters:
+      - description: ID Barang
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Barang berhasil dihapus
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Hapus Master Barang (Soft Delete)
+      tags:
+      - 03. Master Barang
+    put:
+      consumes:
+      - application/json
+      description: Memperbarui data master barang beserta list kemasannya berdasarkan
+        ID.
+      parameters:
+      - description: ID Barang
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Data Update Barang utuh
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/models.BarangInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Barang berhasil diupdate
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Format JSON tidak valid
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Barang tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update Master Barang
+      tags:
+      - 03. Master Barang
+  /api/barangs/reorder:
+    put:
+      consumes:
+      - application/json
+      description: Memperbarui posisi/urutan barang untuk tampilan di form pembuatan
+        nota. (Dipanggil saat Drag & Drop di UI Vue)
+      parameters:
+      - description: 'Array of object dengan key: id, urutan'
+        in: body
+        name: payload
+        required: true
+        schema:
+          items:
+            $ref: '#/definitions/models.UrutanBarangInput'
+          type: array
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Urutan barang berhasil diperbarui
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Format data salah
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update Urutan Tampilan Barang
+      tags:
+      - 03. Master Barang
+  /api/catatan-besar:
+    get:
+      consumes:
+      - application/json
+      description: Mengambil laporan rekapitulasi kirim & retur barang yang difilter
+        berdasarkan tanggal dan siklus.
+      parameters:
+      - description: 'Format YYYY-MM-DD (Default: Hari ini)'
+        in: query
+        name: tanggal
+        type: string
+      - description: Filter Siklus
+        enum:
+        - HARIAN
+        - SiklusDua
+        - SiklusKamisSenin
+        - SiklusJumatSelasa
+        - SiklusSabtuRabu
+        in: query
+        name: siklus
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Berhasil menarik catatan besar
+          schema:
+            items:
+              $ref: '#/definitions/models.CatatanBesarResponse'
+            type: array
+        "500":
+          description: Kesalahan eksekusi database
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Laporan Catatan Besar
+      tags:
+      - 10. Laporan & Rangkuman
+  /api/inventory/rusak:
+    get:
+      consumes:
+      - application/json
+      description: Menampilkan data barang terbuang/afkir harian.
+      parameters:
+      - description: Tanggal filter (YYYY-MM-DD)
+        in: query
+        name: tanggal
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Berhasil ditarik
+          schema:
+            items:
+              $ref: '#/definitions/models.BarangRusak'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: Ambil Riwayat Afkir / Gratisan
+      tags:
+      - 11. Operasional Inventory
+    post:
+      consumes:
+      - application/json
+      description: Menyimpan jumlah roti yang dibuang/gratis, akan otomatis mengurangi
+        jumlah Sisa Layak Jual saat Tutup Buku nanti malam.
+      parameters:
+      - description: Data afkir
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/models.BarangRusakInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Dicatat
+          schema:
+            $ref: '#/definitions/models.MessageResponse'
+      security:
+      - BearerAuth: []
+      summary: Catat Barang Rusak / Afkir
+      tags:
+      - 11. Operasional Inventory
+  /api/inventory/rusak/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Menghapus riwayat afkir. Kalkulasi mesin Tutup Buku akan menyesuaikan
+        sendiri.
+      parameters:
+      - description: ID Afkir
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Dihapus
+          schema:
+            $ref: '#/definitions/models.MessageResponse'
+      security:
+      - BearerAuth: []
+      summary: Batal Catat Afkir
+      tags:
+      - 11. Operasional Inventory
+  /api/kas:
+    get:
+      consumes:
+      - application/json
+      description: Menarik semua catatan transaksi masuk/keluar dari brankas secara
+        menurun (terbaru di atas).
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Berhasil menarik data kas
+          schema:
+            items:
+              $ref: '#/definitions/models.TransaksiKas'
+            type: array
+        "500":
+          description: Kesalahan eksekusi database
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Ambil Riwayat Transaksi Kas
+      tags:
+      - 14. Kas & Keuangan
+    post:
+      consumes:
+      - application/json
+      description: Menyimpan transaksi kas secara manual, khusus untuk kategori non-sistem
+        seperti pengeluaran rumah tangga atau setoran modal.
+      parameters:
+      - description: Data transaksi kas
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/models.KasInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Transaksi kas berhasil dicatat
+          schema:
+            $ref: '#/definitions/models.MessageResponse'
+        "400":
+          description: Format data JSON salah
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Kesalahan eksekusi database
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Catat Transaksi Kas Manual
+      tags:
+      - 14. Kas & Keuangan
+  /api/kas/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Menghapus paksa catatan kas jika terjadi salah ketik atau salah
+        input nominal.
+      parameters:
+      - description: ID Kas
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Transaksi kas berhasil dihapus
+          schema:
+            $ref: '#/definitions/models.MessageResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Hapus Transaksi Kas
+      tags:
+      - 14. Kas & Keuangan
+  /api/konversi/sisa-kemarin:
+    get:
+      consumes:
+      - application/json
+      description: Mengambil data sisa layak jual hari-hari sebelumnya (berdasarkan
+        batas kadaluwarsa barang) yang masih bisa diseret untuk pengiriman hari ini.
+      parameters:
+      - description: Tanggal pengiriman hari ini (YYYY-MM-DD)
+        in: query
+        name: tanggal
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Data sisa kemarin ditarik
+          schema:
+            items:
+              $ref: '#/definitions/models.SisaLayakJual'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: Tarik Sisa Layak Jual (H-1)
+      tags:
+      - 11. Operasional Inventory
+  /api/opname:
+    get:
+      consumes:
+      - application/json
+      description: Menampilkan histori koreksi paksa jumlah stok bahan fisik di gudang.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Berhasil ditarik
+          schema:
+            items:
+              $ref: '#/definitions/models.StockOpname'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: Ambil Riwayat Stock Opname (Sidak Fisik)
+      tags:
+      - 11. Operasional Inventory
+    post:
+      consumes:
+      - application/json
+      description: Memperbarui stok mutlak database dengan stok fisik nyata (menyesuaikan
+        selisih/tumpah secara paksa).
+      parameters:
+      - description: Data penyesuaian stok fisik
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/models.StockOpnameInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Opname dicatat
+          schema:
+            $ref: '#/definitions/models.MessageResponse'
+      security:
+      - BearerAuth: []
+      summary: Eksekusi Stock Opname
+      tags:
+      - 11. Operasional Inventory
+  /api/pembelian:
+    get:
+      consumes:
+      - application/json
+      description: Menarik riwayat belanja bahan fisik.
+      parameters:
+      - description: Tanggal Mulai (YYYY-MM-DD)
+        in: query
+        name: start
+        type: string
+      - description: Tanggal Akhir (YYYY-MM-DD)
+        in: query
+        name: end
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Berhasil ditarik
+          schema:
+            items:
+              $ref: '#/definitions/models.PembelianBahan'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: Riwayat Pembelian Bahan Baku
+      tags:
+      - 11. Operasional Inventory
+    post:
+      consumes:
+      - application/json
+      description: Mencatat belanja bahan, otomatis menambah stok gudang, menimpa
+        harga beli terbaru, dan memotong kas (jika lunas).
+      parameters:
+      - description: Data pembelian lengkap
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/models.PembelianBahanInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Pembelian berhasil dicatat
+          schema:
+            $ref: '#/definitions/models.MessageResponse'
+        "500":
+          description: Gagal potong kas/stok
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Catat Pembelian Bahan (Otomatis Tambah Stok)
+      tags:
+      - 11. Operasional Inventory
+  /api/pembelian/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Membatalkan transaksi belanja, mengembalikan stok gudang ke semula,
+        dan memulihkan saldo kas jika terlanjur lunas.
+      parameters:
+      - description: ID Pembelian
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Dibatalkan
+          schema:
+            $ref: '#/definitions/models.MessageResponse'
+      security:
+      - BearerAuth: []
+      summary: Batalkan Pembelian (Rollback Stok & Kas)
+      tags:
+      - 11. Operasional Inventory
+  /api/pembelian/{id}/status:
+    put:
+      consumes:
+      - application/json
+      description: Mengubah status lunas pembelian bahan. Otomatis menarik uang atau
+        memotong kas secara sinkron.
+      parameters:
+      - description: ID Pembelian
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Saklar Lunas
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/models.StatusPembelianInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Status diupdate
+          schema:
+            $ref: '#/definitions/models.MessageResponse'
+      security:
+      - BearerAuth: []
+      summary: Update Status Pembayaran Belanja (Hutang/Lunas)
+      tags:
+      - 11. Operasional Inventory
+  /api/pengaturan/kas:
+    get:
+      consumes:
+      - application/json
+      description: Mengecek apakah fitur sinkronisasi otomatis antara Nota/Pembelian
+        ke Brankas Kas sedang menyala atau mati.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Status sinkronisasi
+          schema:
+            $ref: '#/definitions/models.PengaturanKasResponse'
+      security:
+      - BearerAuth: []
+      summary: Cek Status Saklar Kas
+      tags:
+      - 14. Kas & Keuangan
+    put:
+      consumes:
+      - application/json
+      description: Menghidupkan atau mematikan sinkronisasi otomatis (Robot Kas) untuk
+        Nota dan Pembelian.
+      parameters:
+      - description: Payload saklar
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/models.ToggleKasInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Status sinkronisasi diperbarui
+          schema:
+            $ref: '#/definitions/models.MessageResponse'
+        "400":
+          description: Format data JSON salah
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Ubah Status Saklar Kas
+      tags:
+      - 14. Kas & Keuangan
+  /api/pesanan:
+    post:
+      consumes:
+      - application/json
+      description: Membuat transaksi pre-order. Jika terdapat Uang Muka (DP) atau
+        langsung lunas, otomatis masuk ke Brankas/Kas.
+      parameters:
+      - description: Data lengkap pesanan beserta detail barang dan kemasan
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/models.NotaPesananInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Pesanan berhasil dibuat
+          schema:
+            $ref: '#/definitions/models.MessageResponse'
+        "400":
+          description: Format data JSON salah
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Kesalahan eksekusi database
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Buat Nota Pesanan (PO) Baru
+      tags:
+      - 09. Nota Pesanan (PO)
+  /api/pesanan/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Menarik satu data pesanan spesifik beserta hierarki detail barang
+        dan kemasannya untuk ditampilkan di form edit.
+      parameters:
+      - description: ID Nota Pesanan
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Berhasil menarik detail pesanan
+          schema:
+            $ref: '#/definitions/models.NotaPesanan'
+        "404":
+          description: Pesanan tidak ditemukan
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Ambil Detail Pesanan (Berdasarkan ID)
+      tags:
+      - 09. Nota Pesanan (PO)
+    post:
+      consumes:
+      - application/json
+      description: Memperbarui data pesanan dan menghitung ulang sisa tagihan. Sistem
+        akan otomatis sinkronisasi perubahan DP atau Pelunasan ke Kas.
+      parameters:
+      - description: ID Nota Pesanan
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Data revisi pesanan
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/models.NotaPesananInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Pesanan berhasil diupdate
+          schema:
+            $ref: '#/definitions/models.MessageResponse'
+        "400":
+          description: Format data JSON salah
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update Data Pesanan (PO)
+      tags:
+      - 09. Nota Pesanan (PO)
+  /api/pesanan/{id}/batal:
+    put:
+      consumes:
+      - application/json
+      description: Mengubah status pesanan menjadi DIBATALKAN. Sistem otomatis menarik
+        (rollback) DP dan uang Pelunasan dari Brankas Kas, serta mengembalikan stok
+        kemasan jika sudah dipotong.
+      parameters:
+      - description: ID Nota Pesanan
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Pesanan berhasil dibatalkan
+          schema:
+            $ref: '#/definitions/models.MessageResponse'
+        "404":
+          description: Pesanan tidak ditemukan
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Batalkan Pesanan PO
+      tags:
+      - 09. Nota Pesanan (PO)
+  /api/pesanan/{id}/pulihkan:
+    put:
+      consumes:
+      - application/json
+      description: Mengembalikan status pesanan yang batal menjadi MENUNGGU, dan menyuntikkan
+        ulang uang DP/Pelunasan ke Brankas Kas.
+      parameters:
+      - description: ID Nota Pesanan
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Pesanan berhasil dipulihkan
+          schema:
+            $ref: '#/definitions/models.MessageResponse'
+        "404":
+          description: Pesanan tidak ditemukan
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Pulihkan Pesanan PO
+      tags:
+      - 09. Nota Pesanan (PO)
+  /api/pesanan/catatan:
+    get:
+      consumes:
+      - application/json
+      description: Menarik daftar rekap barang yang harus diproduksi/disiapkan pada
+        hari tertentu.
+      parameters:
+      - description: Format YYYY-MM-DD (Tanggal Pengiriman)
+        in: query
+        name: tanggal
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Berhasil menarik catatan pesanan harian
+          schema:
+            items:
+              $ref: '#/definitions/models.CatatanPesananResponse'
+            type: array
+        "500":
+          description: Kesalahan eksekusi database
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Ambil Catatan Pesanan Harian
+      tags:
+      - 09. Nota Pesanan (PO)
+  /api/pesanan/next-number:
+    get:
+      consumes:
+      - application/json
+      description: Meng-generate nomor nota pesanan urut berdasarkan tanggal dan ID
+        toko/Pabrik.
+      parameters:
+      - description: 'Format: YYYY-MM-DD (Default: Hari ini)'
+        in: query
+        name: tanggal
+        type: string
+      - description: ID Toko (Isi '0' atau biarkan kosong untuk PABRIK)
+        in: query
+        name: toko_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Berhasil mendapatkan nomor PO
+          schema:
+            $ref: '#/definitions/models.NextNotaResponse'
+      security:
+      - BearerAuth: []
+      summary: Dapatkan Nomor PO Berikutnya
+      tags:
+      - 09. Nota Pesanan (PO)
+  /api/pesanan/rangkuman-bulanan:
+    get:
+      consumes:
+      - application/json
+      description: Mengambil ringkasan omzet PO, performa titik ambil (Mitra/Pabrik),
+        dan barang terlaris.
+      parameters:
+      - description: Tanggal Mulai (YYYY-MM-DD)
+        in: query
+        name: start
+        required: true
+        type: string
+      - description: Tanggal Akhir (YYYY-MM-DD)
+        in: query
+        name: end
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Berhasil menarik rangkuman bulanan PO
+          schema:
+            $ref: '#/definitions/models.RangkumanPesananResponse'
+      security:
+      - BearerAuth: []
+      summary: Rangkuman Bulanan Pesanan (PO)
+      tags:
+      - 10. Laporan & Rangkuman
+  /api/pesanan/riwayat:
+    get:
+      consumes:
+      - application/json
+      description: Menarik seluruh data pesanan (PO) lengkap dengan relasi toko dan
+        detail barang, diurutkan dari yang terbaru.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Berhasil menarik data riwayat
+          schema:
+            items:
+              $ref: '#/definitions/models.NotaPesanan'
+            type: array
+        "500":
+          description: Kesalahan server
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Ambil Riwayat Pesanan (PO)
+      tags:
+      - 09. Nota Pesanan (PO)
+  /api/produksi/jurnal:
+    get:
+      consumes:
+      - application/json
+      description: Mengambil laporan Jurnal Efisiensi (Waste) dan tabel sisa layak
+        jual yang dihasilkan mesin tutup buku.
+      parameters:
+      - description: Tanggal tutup buku (YYYY-MM-DD)
+        in: query
+        name: tanggal
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Data jurnal berhasil ditarik
+          schema:
+            $ref: '#/definitions/models.JurnalTutupBukuResponse'
+      security:
+      - BearerAuth: []
+      summary: Ambil Hasil Jurnal Tutup Buku
+      tags:
+      - 13. Laporan Penutup (End of Day)
+  /api/produksi/masak:
+    get:
+      consumes:
+      - application/json
+      description: Menampilkan riwayat pengadukan resep (batch) berdasarkan hari.
+      parameters:
+      - description: Tanggal filter (YYYY-MM-DD)
+        in: query
+        name: tanggal
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Berhasil ditarik
+          schema:
+            items:
+              $ref: '#/definitions/models.ProduksiMasak'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: Ambil Catatan Masak Dapur Harian
+      tags:
+      - 12. Produksi & Dapur
+    post:
+      consumes:
+      - application/json
+      description: Menyimpan data adonan dan otomatis memotong seluruh stok fisik
+        bahan baku sesuai rasio resep.
+      parameters:
+      - description: Data batch masak
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/models.ProduksiMasakInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Dicatat
+          schema:
+            $ref: '#/definitions/models.MessageResponse'
+      security:
+      - BearerAuth: []
+      summary: Catat Masak Adonan Baru
+      tags:
+      - 12. Produksi & Dapur
+  /api/produksi/masak/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Membatalkan catatan pengadukan resep dan mengembalikan stok fisik
+        bahan baku ke gudang.
+      parameters:
+      - description: ID Masak
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Dibatalkan
+          schema:
+            $ref: '#/definitions/models.MessageResponse'
+      security:
+      - BearerAuth: []
+      summary: Batal Masak Adonan (Rollback Stok Mentah)
+      tags:
+      - 12. Produksi & Dapur
+  /api/produksi/matang:
+    get:
+      consumes:
+      - application/json
+      description: Menampilkan riwayat hasil matang roti yang sudah masuk ke buffer
+        pengiriman.
+      parameters:
+      - description: Tanggal filter (YYYY-MM-DD)
+        in: query
+        name: tanggal
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Berhasil ditarik
+          schema:
+            items:
+              $ref: '#/definitions/models.ProduksiMatang'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: Ambil Hasil Oven Matang Harian
+      tags:
+      - 12. Produksi & Dapur
+    post:
+      consumes:
+      - application/json
+      description: Mencatat perolehan roti fisik dan otomatis memotong stok kardus/plastik
+        kemasan dari gudang.
+      parameters:
+      - description: Data hasil oven
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/models.ProduksiMatangInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Dicatat
+          schema:
+            $ref: '#/definitions/models.MessageResponse'
+      security:
+      - BearerAuth: []
+      summary: Catat Roti Matang Keluar Oven
+      tags:
+      - 12. Produksi & Dapur
+  /api/produksi/matang/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Membatalkan catatan matang dan mengembalikan bahan plastik/kardus
+        ke gudang.
+      parameters:
+      - description: ID Matang
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Dibatalkan
+          schema:
+            $ref: '#/definitions/models.MessageResponse'
+      security:
+      - BearerAuth: []
+      summary: Batal Catat Matang (Rollback Stok Kemasan)
+      tags:
+      - 12. Produksi & Dapur
+  /api/produksi/tutup-buku:
+    post:
+      consumes:
+      - application/json
+      description: Mesin raksasa yang mengakumulasi hasil matang, dikurangi nota terkirim,
+        dikurangi nota PO, dikurangi afkir, dan akhirnya menyimpulkan Sisa Layak Jual
+        (stok nyantol) serta mencetak Jurnal Efisiensi.
+      parameters:
+      - description: Tanggal tutup buku
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/models.TutupBukuInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Berhasil dikalkulasi
+          schema:
+            $ref: '#/definitions/models.MessageResponse'
+      security:
+      - BearerAuth: []
+      summary: Jalankan Mesin Tutup Buku Dapur (Sinkronisasi Akhir)
+      tags:
+      - 13. Laporan Penutup (End of Day)
+  /api/profil:
+    get:
+      consumes:
+      - application/json
+      description: Mengambil data profil Tiara Bakery (Nama dan Alamat) untuk keperluan
+        header nota PDF.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Berhasil menarik data profil
+          schema:
+            $ref: '#/definitions/models.ProfilTiara'
+      security:
+      - BearerAuth: []
+      summary: Ambil Profil Perusahaan
+      tags:
+      - 02. Master Profil
+  /api/rangkuman:
+    get:
+      consumes:
+      - application/json
+      description: Mengambil rangkuman total pendapatan, persentase retur, serta performa
+        tiap toko dan tiap barang.
+      parameters:
+      - description: Tanggal Mulai (YYYY-MM-DD)
+        in: query
+        name: start
+        required: true
+        type: string
+      - description: Tanggal Akhir (YYYY-MM-DD)
+        in: query
+        name: end
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Berhasil menarik data rangkuman global
+          schema:
+            $ref: '#/definitions/models.RangkumanResponse'
+        "400":
+          description: Tanggal wajib diisi
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Rangkuman Omzet Global
+      tags:
+      - 10. Laporan & Rangkuman
+  /api/rangkuman-per-toko:
+    get:
+      consumes:
+      - application/json
+      description: Melihat performa barang (total kirim vs laku) untuk satu toko spesifik
+        pada rentang tanggal tertentu.
+      parameters:
+      - description: Tanggal Mulai (YYYY-MM-DD)
+        in: query
+        name: start
+        required: true
+        type: string
+      - description: Tanggal Akhir (YYYY-MM-DD)
+        in: query
+        name: end
+        required: true
+        type: string
+      - description: ID Toko yang difilter
+        in: query
+        name: toko_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Berhasil menarik data performa toko
+          schema:
+            items:
+              $ref: '#/definitions/models.RangkumanPerTokoResponse'
+            type: array
+        "400":
+          description: ID Toko tidak valid
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Rangkuman Spesifik Per Toko
+      tags:
+      - 10. Laporan & Rangkuman
+  /api/resep:
+    get:
+      consumes:
+      - application/json
+      description: Mengambil daftar master resep beserta detail array komponen bahan-bahannya.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List data resep ditarik
+          schema:
+            items:
+              $ref: '#/definitions/models.Resep'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: Ambil Seluruh Master Resep
+      tags:
+      - 06. Master Resep
+    post:
+      consumes:
+      - application/json
+      description: Menyimpan data master resep baru lengkap dengan komposisi bahannya.
+      parameters:
+      - description: Data Resep utuh
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/models.ResepInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Resep berhasil dibuat
+          schema:
+            $ref: '#/definitions/models.MessageResponse'
+        "400":
+          description: Format JSON salah
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Buat Master Resep Baru
+      tags:
+      - 06. Master Resep
+  /api/resep/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Menghapus master resep dari daftar aktif.
+      parameters:
+      - description: ID Resep
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Resep berhasil dihapus
+          schema:
+            $ref: '#/definitions/models.MessageResponse'
+      security:
+      - BearerAuth: []
+      summary: Hapus Master Resep (Soft Delete)
+      tags:
+      - 06. Master Resep
+    put:
+      consumes:
+      - application/json
+      description: Memperbarui data resep dan list komposisi bahan berdasarkan ID
+        resep.
+      parameters:
+      - description: ID Resep
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Data Resep utuh
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/models.ResepInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Resep berhasil diupdate
+          schema:
+            $ref: '#/definitions/models.MessageResponse'
+      security:
+      - BearerAuth: []
+      summary: Update Master Resep
+      tags:
+      - 06. Master Resep
+  /api/sampah:
+    get:
+      consumes:
+      - application/json
+      description: Mengambil semua data master (toko, barang, bahan, resep) yang berstatus
+        soft-deleted.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Berhasil menarik data sampah
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Ambil Data Tong Sampah
+      tags:
+      - 07. Master Sampah
+  /api/sampah/{type}/{id}:
+    put:
+      consumes:
+      - application/json
+      description: 'Mengembalikan data master yang ada di tong sampah ke daftar aktif.
+        Parameter type bisa berisi: ''toko'', ''barang'', ''bahan'', atau ''resep''.'
+      parameters:
+      - description: Jenis Data (toko/barang/bahan/resep)
+        in: path
+        name: type
+        required: true
+        type: string
+      - description: ID Data
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Data berhasil dipulihkan
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Jenis data tidak valid
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Pulihkan Data Terhapus
+      tags:
+      - 07. Master Sampah
+  /api/tokos:
+    get:
+      consumes:
+      - application/json
+      description: Mengambil data seluruh mitra toko beserta pengaturan siklus tagihannya.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Berhasil menarik data toko
+          schema:
+            items:
+              $ref: '#/definitions/models.Toko'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Ambil Seluruh Master Toko
+      tags:
+      - 04. Master Toko
+    post:
+      consumes:
+      - application/json
+      description: Menyimpan data mitra toko baru beserta aturan siklus tagihannya.
+      parameters:
+      - description: Data Toko Baru
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/models.Toko'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Toko berhasil dibuat
+          schema:
+            $ref: '#/definitions/models.Toko'
+        "400":
+          description: Format JSON tidak valid
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Gagal menyimpan ke database
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Buat Master Toko Baru
+      tags:
+      - 04. Master Toko
+  /api/tokos/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Menghapus mitra toko dari daftar aktif (masuk ke tong sampah).
+      parameters:
+      - description: ID Toko
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Toko berhasil dihapus
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Hapus Master Toko (Soft Delete)
+      tags:
+      - 04. Master Toko
+    put:
+      consumes:
+      - application/json
+      description: Memperbarui profil mitra toko dan aturan siklus tagihannya berdasarkan
+        ID.
+      parameters:
+      - description: ID Toko
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Data Update Toko
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/models.Toko'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Toko berhasil diupdate
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Format JSON tidak valid
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Toko tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update Master Toko
+      tags:
+      - 04. Master Toko
   /login:
     post:
       consumes:
@@ -37,7 +2754,265 @@ paths:
             type: object
       summary: Autentikasi User (Login)
       tags:
-      - Authentication
+      - 01. Authentication
+  /notas:
+    get:
+      consumes:
+      - application/json
+      description: Menampilkan daftar keseluruhan riwayat nota kiriman dari yang terbaru
+        (descending).
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.Nota'
+            type: array
+        "500":
+          description: Kesalahan server
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Ambil Semua Riwayat Nota
+      tags:
+      - 08. Nota Reguler
+    post:
+      consumes:
+      - application/json
+      description: Memasukkan data nota kiriman harian beserta detail array barangnya
+        ke database. Akan memicu trigger sinkronisasi brankas (Kas) jika nota ditandai
+        lunas.
+      parameters:
+      - description: Data lengkap nota dan detail barang
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/models.NotaInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 'Pesan: Nota berhasil disimpan!'
+          schema:
+            $ref: '#/definitions/models.MessageResponse'
+        "400":
+          description: Format data JSON tidak valid
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Kesalahan eksekusi database / kas
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Buat Nota Reguler baru
+      tags:
+      - 08. Nota Reguler
+  /notas/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Menampilkan data spesifik sebuah nota beserta hierarki relasinya
+        (Detail Nota, Barang terkait, dan Toko).
+      parameters:
+      - description: ID Nota
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Nota'
+        "404":
+          description: Nota tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Ambil Detail Nota (Berdasarkan ID)
+      tags:
+      - 08. Nota Reguler
+    put:
+      consumes:
+      - application/json
+      description: Mengubah data nota kiriman historis berdasarkan ID. Endpoint ini
+        sangat krusial karena otomatis menghitung selisih uang jika status lunas/tidak
+        lunas berubah.
+      parameters:
+      - description: ID Nota
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Data nota yang akan direvisi
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/models.NotaInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 'Pesan: Nota berhasil diupdate!'
+          schema:
+            $ref: '#/definitions/models.MessageResponse'
+        "400":
+          description: Format data JSON tidak valid
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Nota tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Kesalahan eksekusi database / kas
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Ubah data Nota Reguler
+      tags:
+      - 08. Nota Reguler
+  /notas/{id}/batal:
+    put:
+      consumes:
+      - application/json
+      description: Mengubah status nota menjadi 'DIBATALKAN'. Jika sebelumnya lunas,
+        sistem otomatis akan menarik uang dari brankas/kas untuk menjaga integritas
+        pembukuan.
+      parameters:
+      - description: ID Nota
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 'Pesan: Nota berhasil dibatalkan'
+          schema:
+            $ref: '#/definitions/models.MessageResponse'
+        "404":
+          description: Nota tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Kesalahan saat membatalkan transaksi kas
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Batalkan Nota Reguler (Rollback)
+      tags:
+      - 08. Nota Reguler
+  /notas/{id}/pulihkan:
+    put:
+      consumes:
+      - application/json
+      description: Mengembalikan status nota dari 'DIBATALKAN' menjadi 'KIRIM'. Menginjeksi
+        ulang uang ke brankas jika nota tercatat lunas.
+      parameters:
+      - description: ID Nota
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 'Pesan: Nota berhasil dipulihkan'
+          schema:
+            $ref: '#/definitions/models.MessageResponse'
+        "404":
+          description: Nota tidak ditemukan
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Kesalahan server
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Pulihkan Nota Reguler
+      tags:
+      - 08. Nota Reguler
+  /notas/next-number:
+    get:
+      consumes:
+      - application/json
+      description: 'Meng-generate nomor nota urut yang pintar berdasarkan tanggal
+        dan ID toko (Cth: NT/20260427/15-0017)'
+      parameters:
+      - description: Filter berdasarkan ID Toko (Jika 0 = Pabrik)
+        in: query
+        name: toko_id
+        type: string
+      - description: 'Format: YYYY-MM-DD (Default: Hari ini)'
+        in: query
+        name: tanggal
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.NextNotaResponse'
+      summary: Dapatkan nomor nota berikutnya
+      tags:
+      - 08. Nota Reguler
+  /sales/dashboard:
+    get:
+      consumes:
+      - application/json
+      description: 'Menarik 3 himpunan tugas sekaligus untuk user sales yang login:
+        Nota aktif 8 jam terakhir, Tugas membereskan retur (Reguler), dan Tugas mengantar
+        pesanan khusus (PO).'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.DashboardSalesResponse'
+      summary: Muat Dashboard Sales / Kurir
+      tags:
+      - 16. Distribusi Lapangan
+  /sales/kunjungan/{toko_id}:
+    get:
+      consumes:
+      - application/json
+      description: Mengecek apakah sebuah toko memiliki nota berstatus 'KIRIM' namun
+        belum diselesaikan proses returnya. Digunakan untuk memblokir pembuatan nota
+        baru oleh sales.
+      parameters:
+      - description: ID Toko
+        in: path
+        name: toko_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.Nota'
+            type: array
+      summary: Sidak Dosa Retur Toko
+      tags:
+      - 16. Distribusi Lapangan
 securityDefinitions:
   BearerAuth:
     description: 'Masukkan token dengan format: "Bearer {token_jwt}"'

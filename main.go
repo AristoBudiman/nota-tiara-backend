@@ -148,7 +148,7 @@ func connectDB() {
 // LoginAdmin godoc
 // @Summary Autentikasi User (Login)
 // @Description Endpoint publik untuk mendapatkan JWT Token berdasarkan kredensial Superadmin atau Sales.
-// @Tags Authentication
+// @Tags 01. Authentication
 // @Accept json
 // @Produce json
 // @Param payload body map[string]string true "Format JSON dengan key: username, password"
@@ -255,6 +255,24 @@ func RequireRole(allowedRoles ...string) fiber.Handler {
 // @in header
 // @name Authorization
 // @description Masukkan token dengan format: "Bearer {token_jwt}"
+//
+// === DAFTAR ISI SWAGGER (MENGUNCI URUTAN) ===
+// @tag.name 01. Authentication
+// @tag.name 02. Master Profil
+// @tag.name 03. Master Barang
+// @tag.name 04. Master Toko
+// @tag.name 05. Master Bahan Baku
+// @tag.name 06. Master Resep
+// @tag.name 07. Master Sampah
+// @tag.name 08. Nota Reguler
+// @tag.name 09. Nota Pesanan (PO)
+// @tag.name 10. Laporan & Rangkuman
+// @tag.name 11. Operasional Inventory
+// @tag.name 12. Produksi & Dapur
+// @tag.name 13. Laporan Penutup (End of Day)
+// @tag.name 14. Kas & Keuangan
+// @tag.name 15. Analisis & Aset
+// @tag.name 16. Distribusi Lapangan
 func main() {
 	connectDB()
 
@@ -269,7 +287,9 @@ func main() {
 	})
 
 	if os.Getenv("APP_ENV") == "development" {
-		app.Get("/swagger/*", swagger.HandlerDefault)
+		app.Get("/swagger/*", swagger.New(swagger.Config{
+			TagsSorter: "'alpha'",
+		}))
 		log.Println("⚠️ SWAGGER AKTIF: http://localhost:3000/swagger/index.html")
 	}
 

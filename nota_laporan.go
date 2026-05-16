@@ -10,6 +10,19 @@ import (
 )
 
 // CATATAN BESAR
+//
+// GetCatatanBesar godoc
+// @Summary Laporan Catatan Besar
+// @Description Mengambil laporan rekapitulasi kirim & retur barang yang difilter berdasarkan tanggal dan siklus.
+// @Tags 10. Laporan & Rangkuman
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tanggal query string false "Format YYYY-MM-DD (Default: Hari ini)"
+// @Param siklus query string false "Filter Siklus" Enums(HARIAN,SiklusDua,SiklusKamisSenin,SiklusJumatSelasa,SiklusSabtuRabu)
+// @Success 200 {array} models.CatatanBesarResponse "Berhasil menarik catatan besar"
+// @Failure 500 {object} models.ErrorResponse "Kesalahan eksekusi database"
+// @Router /api/catatan-besar [get]
 func GetCatatanBesar(c *fiber.Ctx) error {
 	siklus := c.Query("siklus")
 	tanggal := c.Query("tanggal")
@@ -116,6 +129,19 @@ func GetCatatanBesar(c *fiber.Ctx) error {
 }
 
 // RANGKUMAN (Logika Anchor Day / Hari Jangkar Mutlak)
+//
+// GetRangkuman godoc
+// @Summary Rangkuman Omzet Global
+// @Description Mengambil rangkuman total pendapatan, persentase retur, serta performa tiap toko dan tiap barang.
+// @Tags 10. Laporan & Rangkuman
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param start query string true "Tanggal Mulai (YYYY-MM-DD)"
+// @Param end query string true "Tanggal Akhir (YYYY-MM-DD)"
+// @Success 200 {object} models.RangkumanResponse "Berhasil menarik data rangkuman global"
+// @Failure 400 {object} models.ErrorResponse "Tanggal wajib diisi"
+// @Router /api/rangkuman [get]
 func GetRangkuman(c *fiber.Ctx) error {
 	start := c.Query("start")
 	end := c.Query("end")
@@ -307,6 +333,19 @@ func GetRangkuman(c *fiber.Ctx) error {
 	})
 }
 
+// GetRangkumanPerToko godoc
+// @Summary Rangkuman Spesifik Per Toko
+// @Description Melihat performa barang (total kirim vs laku) untuk satu toko spesifik pada rentang tanggal tertentu.
+// @Tags 10. Laporan & Rangkuman
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param start query string true "Tanggal Mulai (YYYY-MM-DD)"
+// @Param end query string true "Tanggal Akhir (YYYY-MM-DD)"
+// @Param toko_id query int true "ID Toko yang difilter"
+// @Success 200 {array} models.RangkumanPerTokoResponse "Berhasil menarik data performa toko"
+// @Failure 400 {object} models.ErrorResponse "ID Toko tidak valid"
+// @Router /api/rangkuman-per-toko [get]
 func GetRangkumanPerToko(c *fiber.Ctx) error {
 	start := c.Query("start")
 	end := c.Query("end")
@@ -401,6 +440,18 @@ func GetRangkumanPerToko(c *fiber.Ctx) error {
 }
 
 // 3. Get Rangkuman Khusus Pesanan (Untuk Tab Rangkuman Bulanan)
+//
+// GetRangkumanPesanan godoc
+// @Summary Rangkuman Bulanan Pesanan (PO)
+// @Description Mengambil ringkasan omzet PO, performa titik ambil (Mitra/Pabrik), dan barang terlaris.
+// @Tags 10. Laporan & Rangkuman
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param start query string true "Tanggal Mulai (YYYY-MM-DD)"
+// @Param end query string true "Tanggal Akhir (YYYY-MM-DD)"
+// @Success 200 {object} models.RangkumanPesananResponse "Berhasil menarik rangkuman bulanan PO"
+// @Router /api/pesanan/rangkuman-bulanan [get]
 func GetRangkumanPesanan(c *fiber.Ctx) error {
 	start := c.Query("start")
 	end := c.Query("end")

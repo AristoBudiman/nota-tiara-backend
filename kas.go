@@ -8,6 +8,17 @@ import (
 )
 
 // 1. Tarik Data Kas (Bisa difilter per bulan/kategori nanti di Vue)
+//
+// GetKas godoc
+// @Summary Ambil Riwayat Transaksi Kas
+// @Description Menarik semua catatan transaksi masuk/keluar dari brankas secara menurun (terbaru di atas).
+// @Tags 14. Kas & Keuangan
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {array} models.TransaksiKas "Berhasil menarik data kas"
+// @Failure 500 {object} models.ErrorResponse "Kesalahan eksekusi database"
+// @Router /api/kas [get]
 func GetKas(c *fiber.Ctx) error {
 	var kas []models.TransaksiKas
 	// Urutkan dari yang terbaru (tanggal terbaru, inputan terakhir)
@@ -18,6 +29,19 @@ func GetKas(c *fiber.Ctx) error {
 }
 
 // 2. Input Kas Manual (Untuk Kategori RUMAH_TANGGA atau Setoran)
+//
+// CreateKas godoc
+// @Summary Catat Transaksi Kas Manual
+// @Description Menyimpan transaksi kas secara manual, khusus untuk kategori non-sistem seperti pengeluaran rumah tangga atau setoran modal.
+// @Tags 14. Kas & Keuangan
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param payload body models.KasInput true "Data transaksi kas"
+// @Success 200 {object} models.MessageResponse "Transaksi kas berhasil dicatat"
+// @Failure 400 {object} models.ErrorResponse "Format data JSON salah"
+// @Failure 500 {object} models.ErrorResponse "Kesalahan eksekusi database"
+// @Router /api/kas [post]
 func CreateKas(c *fiber.Ctx) error {
 	var input struct {
 		Tanggal    string  `json:"tanggal"`
@@ -53,6 +77,18 @@ func CreateKas(c *fiber.Ctx) error {
 }
 
 // 3. Hapus Kas (Kalau salah ketik / salah input)
+//
+// DeleteKas godoc
+// @Summary Hapus Transaksi Kas
+// @Description Menghapus paksa catatan kas jika terjadi salah ketik atau salah input nominal.
+// @Tags 14. Kas & Keuangan
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "ID Kas"
+// @Success 200 {object} models.MessageResponse "Transaksi kas berhasil dihapus"
+// @Failure 500 {object} models.ErrorResponse "Internal server error"
+// @Router /api/kas/{id} [delete]
 func DeleteKas(c *fiber.Ctx) error {
 	id := c.Params("id")
 	if err := DB.Delete(&models.TransaksiKas{}, id).Error; err != nil {
@@ -62,6 +98,16 @@ func DeleteKas(c *fiber.Ctx) error {
 }
 
 // PENGATURAN SAKLAR KAS
+//
+// GetPengaturanKas godoc
+// @Summary Cek Status Saklar Kas
+// @Description Mengecek apakah fitur sinkronisasi otomatis antara Nota/Pembelian ke Brankas Kas sedang menyala atau mati.
+// @Tags 14. Kas & Keuangan
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} models.PengaturanKasResponse "Status sinkronisasi"
+// @Router /api/pengaturan/kas [get]
 func GetPengaturanKas(c *fiber.Ctx) error {
 	var setting models.PengaturanSistem
 	DB.Where("key = ?", "ENABLE_KAS_SYNC").First(&setting)
@@ -70,6 +116,17 @@ func GetPengaturanKas(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"is_active": isActive})
 }
 
+// TogglePengaturanKas godoc
+// @Summary Ubah Status Saklar Kas
+// @Description Menghidupkan atau mematikan sinkronisasi otomatis (Robot Kas) untuk Nota dan Pembelian.
+// @Tags 14. Kas & Keuangan
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param payload body models.ToggleKasInput true "Payload saklar"
+// @Success 200 {object} models.MessageResponse "Status sinkronisasi diperbarui"
+// @Failure 400 {object} models.ErrorResponse "Format data JSON salah"
+// @Router /api/pengaturan/kas [put]
 func TogglePengaturanKas(c *fiber.Ctx) error {
 	var input struct {
 		IsActive bool `json:"is_active"`
@@ -94,6 +151,18 @@ func TogglePengaturanKas(c *fiber.Ctx) error {
 }
 
 // HANDLER ANALISIS ASET & PERTUMBUHAN
+//
+// GetAnalisisAsetLive godoc
+// @Summary Dashboard Aset Live
+// @Description Mengkalkulasi total harta kekayaan real-time (Kas, Piutang, Persediaan Gudang) dikurangi Hutang sampai tanggal target.
+// @Tags 15. Analisis & Aset
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param date query string false "Tanggal batas akhir kalkulasi (Format: YYYY-MM-DD)"
+// @Param start_date query string false "Tanggal mulai untuk hitung total Prive/Pengeluaran RT (Format: YYYY-MM-DD)"
+// @Success 200 {object} models.AnalisisAsetResponse "Data live aset berhasil ditarik"
+// @Router /api/aset/live [get]
 func GetAnalisisAsetLive(c *fiber.Ctx) error {
 	// Ambil parameter tanggal dari URL, defaultnya hari ini
 	targetDate := c.Query("date")
@@ -156,6 +225,18 @@ func GetAnalisisAsetLive(c *fiber.Ctx) error {
 }
 
 // FUNGSI UNTUK MENGUNCI (SNAPSHOT) ASET AKHIR BULAN
+//
+// SimpanSnapshotAset godoc
+// @Summary Kunci Snapshot Aset (Tutup Bulan)
+// @Description Mengunci dan menyimpan nilai kalkulasi aset akhir bulan ke dalam riwayat, agar pertumbuhan kekayaan (profit bersih bulanan) bisa diukur dengan akurat.
+// @Tags 15. Analisis & Aset
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param payload body models.SnapshotAsetInput true "Tanggal / Bulan kunci"
+// @Success 200 {object} models.MessageResponse "Snapshot berhasil dikunci"
+// @Failure 400 {object} models.ErrorResponse "Format tanggal salah"
+// @Router /api/aset/snapshot [post]
 func SimpanSnapshotAset(c *fiber.Ctx) error {
 	var input struct {
 		Bulan string `json:"bulan"` // Format: 2026-05-01
@@ -206,6 +287,15 @@ func SimpanSnapshotAset(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Snapshot aset berhasil dikunci!"})
 }
 
+// GetRiwayatAset godoc
+// @Summary Riwayat Pertumbuhan Aset
+// @Description Menarik riwayat snapshot kekayaan per bulan, diurutkan dari yang terbaru.
+// @Tags 15. Analisis & Aset
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {array} models.AsetSnapshot "Data riwayat aset ditarik"
+// @Router /api/aset/riwayat [get]
 func GetRiwayatAset(c *fiber.Ctx) error {
 	var riwayat []models.AsetSnapshot
 	DB.Order("bulan desc").Find(&riwayat)

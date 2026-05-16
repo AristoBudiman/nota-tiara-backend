@@ -12,6 +12,16 @@ import (
 )
 
 // BUAT NOTA
+//
+// @Summary Dapatkan nomor nota berikutnya
+// @Description Meng-generate nomor nota urut yang pintar berdasarkan tanggal dan ID toko (Cth: NT/20260427/15-0017)
+// @Tags 08. Nota Reguler
+// @Accept json
+// @Produce json
+// @Param toko_id query string false "Filter berdasarkan ID Toko (Jika 0 = Pabrik)"
+// @Param tanggal query string false "Format: YYYY-MM-DD (Default: Hari ini)"
+// @Success 200 {object} models.NextNotaResponse
+// @Router /notas/next-number [get]
 func GetNextNotaNumber(c *fiber.Ctx) error {
 	tokoID := c.Query("toko_id")
 	tgl := c.Query("tanggal") // Format: 2026-04-27
@@ -47,6 +57,16 @@ func GetNextNotaNumber(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"no_nota": noNota})
 }
 
+// @Summary Buat Nota Reguler baru
+// @Description Memasukkan data nota kiriman harian beserta detail array barangnya ke database. Akan memicu trigger sinkronisasi brankas (Kas) jika nota ditandai lunas.
+// @Tags 08. Nota Reguler
+// @Accept json
+// @Produce json
+// @Param payload body models.NotaInput true "Data lengkap nota dan detail barang"
+// @Success 200 {object} models.MessageResponse "Pesan: Nota berhasil disimpan!"
+// @Failure 400 {object} map[string]interface{} "Format data JSON tidak valid"
+// @Failure 500 {object} map[string]interface{} "Kesalahan eksekusi database / kas"
+// @Router /notas [post]
 func CreateNota(c *fiber.Ctx) error {
 	var input struct {
 		NoNota       string `json:"no_nota"`
@@ -173,6 +193,18 @@ func CreateNota(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Nota berhasil dibuat!", "id": nota.ID})
 }
 
+// @Summary Ubah data Nota Reguler
+// @Description Mengubah data nota kiriman historis berdasarkan ID. Endpoint ini sangat krusial karena otomatis menghitung selisih uang jika status lunas/tidak lunas berubah.
+// @Tags 08. Nota Reguler
+// @Accept json
+// @Produce json
+// @Param id path int true "ID Nota"
+// @Param payload body models.NotaInput true "Data nota yang akan direvisi"
+// @Success 200 {object} models.MessageResponse "Pesan: Nota berhasil diupdate!"
+// @Failure 400 {object} map[string]interface{} "Format data JSON tidak valid"
+// @Failure 404 {object} map[string]interface{} "Nota tidak ditemukan"
+// @Failure 500 {object} map[string]interface{} "Kesalahan eksekusi database / kas"
+// @Router /notas/{id} [put]
 func UpdateNota(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var input struct {
@@ -268,11 +300,15 @@ func UpdateNota(c *fiber.Ctx) error {
 
 		adminID := c.Locals("admin_id").(uint)
 		var kasReguler models.TransaksiKas
-		errKas := DB.Where("no_nota_ref = ? AND kategori = 'REGULER'", notaLama.NoNota).First(&kasReguler).Error
+
+		// Ganti .First() menjadi .Find()
+		result := DB.Where("no_nota_ref = ? AND kategori = 'REGULER'", notaLama.NoNota).Find(&kasReguler)
 
 		if input.IsLunas {
 			ket := fmt.Sprintf("Pelunasan Reguler - %s (Toko: %s)", notaLama.NoNota, notaLama.NamaTokoSnapshot)
-			if errKas == nil {
+
+			// Ganti pengecekan errKas menjadi pengecekan jumlah baris
+			if result.RowsAffected > 0 {
 				// Sudah ada kasnya, UPDATE nominalnya (Bisa jadi ada tambahan retur/diskon)
 				DB.Model(&kasReguler).Updates(map[string]interface{}{
 					"nominal":    totalBayarAkhir,
@@ -292,7 +328,7 @@ func UpdateNota(c *fiber.Ctx) error {
 			}
 		} else {
 			// Jika TIDAK LUNAS (atau Batal Lunas), HAPUS KAS JIKA ADA!
-			if errKas == nil {
+			if result.RowsAffected > 0 { // Ganti pengecekan errKas di sini juga
 				DB.Unscoped().Delete(&kasReguler)
 			}
 		}
@@ -302,6 +338,17 @@ func UpdateNota(c *fiber.Ctx) error {
 }
 
 // Batalkan Nota Reguler (Soft Delete & Tarik Kas)
+//
+// @Summary Batalkan Nota Reguler (Rollback)
+// @Description Mengubah status nota menjadi 'DIBATALKAN'. Jika sebelumnya lunas, sistem otomatis akan menarik uang dari brankas/kas untuk menjaga integritas pembukuan.
+// @Tags 08. Nota Reguler
+// @Accept json
+// @Produce json
+// @Param id path int true "ID Nota"
+// @Success 200 {object} models.MessageResponse "Pesan: Nota berhasil dibatalkan"
+// @Failure 404 {object} map[string]interface{} "Nota tidak ditemukan"
+// @Failure 500 {object} map[string]interface{} "Kesalahan saat membatalkan transaksi kas"
+// @Router /notas/{id}/batal [put]
 func BatalkanNota(c *fiber.Ctx) error {
 	id := c.Params("id")
 	tx := DB.Begin()
@@ -326,6 +373,17 @@ func BatalkanNota(c *fiber.Ctx) error {
 }
 
 // PULIHKAN NOTA REGULER
+//
+// @Summary Pulihkan Nota Reguler
+// @Description Mengembalikan status nota dari 'DIBATALKAN' menjadi 'KIRIM'. Menginjeksi ulang uang ke brankas jika nota tercatat lunas.
+// @Tags 08. Nota Reguler
+// @Accept json
+// @Produce json
+// @Param id path int true "ID Nota"
+// @Success 200 {object} models.MessageResponse "Pesan: Nota berhasil dipulihkan"
+// @Failure 404 {object} map[string]interface{} "Nota tidak ditemukan"
+// @Failure 500 {object} map[string]interface{} "Kesalahan server"
+// @Router /notas/{id}/pulihkan [put]
 func PulihkanNota(c *fiber.Ctx) error {
 	id := c.Params("id")
 	tx := DB.Begin()
@@ -364,6 +422,15 @@ func PulihkanNota(c *fiber.Ctx) error {
 }
 
 // RIWAYAT NOTA
+//
+// @Summary Ambil Semua Riwayat Nota
+// @Description Menampilkan daftar keseluruhan riwayat nota kiriman dari yang terbaru (descending).
+// @Tags 08. Nota Reguler
+// @Accept json
+// @Produce json
+// @Success 200 {array} models.Nota
+// @Failure 500 {object} map[string]interface{} "Kesalahan server"
+// @Router /notas [get]
 func GetNotas(c *fiber.Ctx) error {
 	var notas []models.Nota
 	if err := DB.Preload("Toko").Preload("Details").Preload("Details.Barang").Order("id desc").Find(&notas).Error; err != nil {
@@ -372,6 +439,15 @@ func GetNotas(c *fiber.Ctx) error {
 	return c.JSON(notas)
 }
 
+// @Summary Ambil Detail Nota (Berdasarkan ID)
+// @Description Menampilkan data spesifik sebuah nota beserta hierarki relasinya (Detail Nota, Barang terkait, dan Toko).
+// @Tags 08. Nota Reguler
+// @Accept json
+// @Produce json
+// @Param id path int true "ID Nota"
+// @Success 200 {object} models.Nota
+// @Failure 404 {object} map[string]interface{} "Nota tidak ditemukan"
+// @Router /notas/{id} [get]
 func GetNotaByID(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var nota models.Nota
@@ -384,6 +460,14 @@ func GetNotaByID(c *fiber.Ctx) error {
 }
 
 // DASHBOARD KUNJUNGAN SALES
+//
+// @Summary Muat Dashboard Sales / Kurir
+// @Description Menarik 3 himpunan tugas sekaligus untuk user sales yang login: Nota aktif 8 jam terakhir, Tugas membereskan retur (Reguler), dan Tugas mengantar pesanan khusus (PO).
+// @Tags 16. Distribusi Lapangan
+// @Accept json
+// @Produce json
+// @Success 200 {object} models.DashboardSalesResponse
+// @Router /sales/dashboard [get]
 func GetDashboardSales(c *fiber.Ctx) error {
 	adminID := c.Locals("admin_id").(uint)
 	var notaAktif []models.Nota
@@ -403,6 +487,14 @@ func GetDashboardSales(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"aktif": notaAktif, "tugas": notaTugas, "tugas_po": poTugas})
 }
 
+// @Summary Sidak Dosa Retur Toko
+// @Description Mengecek apakah sebuah toko memiliki nota berstatus 'KIRIM' namun belum diselesaikan proses returnya. Digunakan untuk memblokir pembuatan nota baru oleh sales.
+// @Tags 16. Distribusi Lapangan
+// @Accept json
+// @Produce json
+// @Param toko_id path int true "ID Toko"
+// @Success 200 {array} models.Nota
+// @Router /sales/kunjungan/{toko_id} [get]
 func GetKunjunganToko(c *fiber.Ctx) error { // Memeriksa tagihan Retur saat tiba di toko
 	tokoID := c.Params("toko_id")
 	var notaBelumRetur []models.Nota

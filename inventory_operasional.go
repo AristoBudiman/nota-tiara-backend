@@ -9,6 +9,17 @@ import (
 	"gorm.io/gorm"
 )
 
+// GetPembelianBahan godoc
+// @Summary Riwayat Pembelian Bahan Baku
+// @Description Menarik riwayat belanja bahan fisik.
+// @Tags 11. Operasional Inventory
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param start query string false "Tanggal Mulai (YYYY-MM-DD)"
+// @Param end query string false "Tanggal Akhir (YYYY-MM-DD)"
+// @Success 200 {array} models.PembelianBahan "Berhasil ditarik"
+// @Router /api/pembelian [get]
 func GetPembelianBahan(c *fiber.Ctx) error {
 	start := c.Query("start")
 	end := c.Query("end")
@@ -33,6 +44,18 @@ func GetPembelianBahan(c *fiber.Ctx) error {
 }
 
 // PEMBELIAN BAHAN (UPDATE OTOMATIS)
+//
+// CreatePembelianBahan godoc
+// @Summary Catat Pembelian Bahan (Otomatis Tambah Stok)
+// @Description Mencatat belanja bahan, otomatis menambah stok gudang, menimpa harga beli terbaru, dan memotong kas (jika lunas).
+// @Tags 11. Operasional Inventory
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param payload body models.PembelianBahanInput true "Data pembelian lengkap"
+// @Success 200 {object} models.MessageResponse "Pembelian berhasil dicatat"
+// @Failure 500 {object} models.ErrorResponse "Gagal potong kas/stok"
+// @Router /api/pembelian [post]
 func CreatePembelianBahan(c *fiber.Ctx) error {
 	var input struct {
 		Tanggal         string  `json:"tanggal"`
@@ -118,6 +141,18 @@ func CreatePembelianBahan(c *fiber.Ctx) error {
 }
 
 // FUNGSI BARU: UBAH STATUS BAYAR (LUNAS <-> HUTANG)
+//
+// UpdateStatusPembelian godoc
+// @Summary Update Status Pembayaran Belanja (Hutang/Lunas)
+// @Description Mengubah status lunas pembelian bahan. Otomatis menarik uang atau memotong kas secara sinkron.
+// @Tags 11. Operasional Inventory
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "ID Pembelian"
+// @Param payload body models.StatusPembelianInput true "Saklar Lunas"
+// @Success 200 {object} models.MessageResponse "Status diupdate"
+// @Router /api/pembelian/{id}/status [put]
 func UpdateStatusPembelian(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var input struct {
@@ -182,6 +217,17 @@ func UpdateStatusPembelian(c *fiber.Ctx) error {
 }
 
 // FUNGSI BARU: BATALKAN PEMBELIAN & REFUND STOK/KAS
+//
+// DeletePembelianBahan godoc
+// @Summary Batalkan Pembelian (Rollback Stok & Kas)
+// @Description Membatalkan transaksi belanja, mengembalikan stok gudang ke semula, dan memulihkan saldo kas jika terlanjur lunas.
+// @Tags 11. Operasional Inventory
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "ID Pembelian"
+// @Success 200 {object} models.MessageResponse "Dibatalkan"
+// @Router /api/pembelian/{id} [delete]
 func DeletePembelianBahan(c *fiber.Ctx) error {
 	id := c.Params("id")
 	tx := DB.Begin()
@@ -217,6 +263,17 @@ func DeletePembelianBahan(c *fiber.Ctx) error {
 }
 
 // PRODUKSI MASAK
+//
+// GetProduksiMasak godoc
+// @Summary Ambil Catatan Masak Dapur Harian
+// @Description Menampilkan riwayat pengadukan resep (batch) berdasarkan hari.
+// @Tags 12. Produksi & Dapur
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tanggal query string false "Tanggal filter (YYYY-MM-DD)"
+// @Success 200 {array} models.ProduksiMasak "Berhasil ditarik"
+// @Router /api/produksi/masak [get]
 func GetProduksiMasak(c *fiber.Ctx) error {
 	tanggal := c.Query("tanggal")
 	if tanggal == "" {
@@ -229,6 +286,16 @@ func GetProduksiMasak(c *fiber.Ctx) error {
 	return c.JSON(masak)
 }
 
+// CreateProduksiMasak godoc
+// @Summary Catat Masak Adonan Baru
+// @Description Menyimpan data adonan dan otomatis memotong seluruh stok fisik bahan baku sesuai rasio resep.
+// @Tags 12. Produksi & Dapur
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param payload body models.ProduksiMasakInput true "Data batch masak"
+// @Success 200 {object} models.MessageResponse "Dicatat"
+// @Router /api/produksi/masak [post]
 func CreateProduksiMasak(c *fiber.Ctx) error {
 	var input struct {
 		Tanggal     string  `json:"tanggal"`
@@ -277,6 +344,16 @@ func CreateProduksiMasak(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Produksi berhasil dicatat! Stok gudang otomatis terpotong."})
 }
 
+// DeleteProduksiMasak godoc
+// @Summary Batal Masak Adonan (Rollback Stok Mentah)
+// @Description Membatalkan catatan pengadukan resep dan mengembalikan stok fisik bahan baku ke gudang.
+// @Tags 12. Produksi & Dapur
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "ID Masak"
+// @Success 200 {object} models.MessageResponse "Dibatalkan"
+// @Router /api/produksi/masak/{id} [delete]
 func DeleteProduksiMasak(c *fiber.Ctx) error {
 	id := c.Params("id")
 	tx := DB.Begin()
@@ -309,6 +386,17 @@ func DeleteProduksiMasak(c *fiber.Ctx) error {
 }
 
 // PRODUKSI MATANG
+//
+// GetProduksiMatang godoc
+// @Summary Ambil Hasil Oven Matang Harian
+// @Description Menampilkan riwayat hasil matang roti yang sudah masuk ke buffer pengiriman.
+// @Tags 12. Produksi & Dapur
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tanggal query string false "Tanggal filter (YYYY-MM-DD)"
+// @Success 200 {array} models.ProduksiMatang "Berhasil ditarik"
+// @Router /api/produksi/matang [get]
 func GetProduksiMatang(c *fiber.Ctx) error {
 	tanggal := c.Query("tanggal")
 	if tanggal == "" {
@@ -321,6 +409,16 @@ func GetProduksiMatang(c *fiber.Ctx) error {
 	return c.JSON(matang)
 }
 
+// CreateProduksiMatang godoc
+// @Summary Catat Roti Matang Keluar Oven
+// @Description Mencatat perolehan roti fisik dan otomatis memotong stok kardus/plastik kemasan dari gudang.
+// @Tags 12. Produksi & Dapur
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param payload body models.ProduksiMatangInput true "Data hasil oven"
+// @Success 200 {object} models.MessageResponse "Dicatat"
+// @Router /api/produksi/matang [post]
 func CreateProduksiMatang(c *fiber.Ctx) error {
 	var input struct {
 		Tanggal   string `json:"tanggal"`
@@ -358,6 +456,16 @@ func CreateProduksiMatang(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Hasil matang dicatat & kemasan terpotong!"})
 }
 
+// DeleteProduksiMatang godoc
+// @Summary Batal Catat Matang (Rollback Stok Kemasan)
+// @Description Membatalkan catatan matang dan mengembalikan bahan plastik/kardus ke gudang.
+// @Tags 12. Produksi & Dapur
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "ID Matang"
+// @Success 200 {object} models.MessageResponse "Dibatalkan"
+// @Router /api/produksi/matang/{id} [delete]
 func DeleteProduksiMatang(c *fiber.Ctx) error {
 	id := c.Params("id")
 	tx := DB.Begin()
@@ -387,6 +495,17 @@ func DeleteProduksiMatang(c *fiber.Ctx) error {
 }
 
 // BARANG RUSAK / AFKIR / GRATIS
+//
+// GetBarangRusak godoc
+// @Summary Ambil Riwayat Afkir / Gratisan
+// @Description Menampilkan data barang terbuang/afkir harian.
+// @Tags 11. Operasional Inventory
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tanggal query string false "Tanggal filter (YYYY-MM-DD)"
+// @Success 200 {array} models.BarangRusak "Berhasil ditarik"
+// @Router /api/inventory/rusak [get]
 func GetBarangRusak(c *fiber.Ctx) error {
 	tanggal := c.Query("tanggal")
 	if tanggal == "" {
@@ -399,6 +518,16 @@ func GetBarangRusak(c *fiber.Ctx) error {
 	return c.JSON(rusak)
 }
 
+// CreateBarangRusak godoc
+// @Summary Catat Barang Rusak / Afkir
+// @Description Menyimpan jumlah roti yang dibuang/gratis, akan otomatis mengurangi jumlah Sisa Layak Jual saat Tutup Buku nanti malam.
+// @Tags 11. Operasional Inventory
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param payload body models.BarangRusakInput true "Data afkir"
+// @Success 200 {object} models.MessageResponse "Dicatat"
+// @Router /api/inventory/rusak [post]
 func CreateBarangRusak(c *fiber.Ctx) error {
 	var input struct {
 		Tanggal    string `json:"tanggal"`
@@ -425,6 +554,16 @@ func CreateBarangRusak(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Barang afkir/gratis berhasil dicatat!"})
 }
 
+// DeleteBarangRusak godoc
+// @Summary Batal Catat Afkir
+// @Description Menghapus riwayat afkir. Kalkulasi mesin Tutup Buku akan menyesuaikan sendiri.
+// @Tags 11. Operasional Inventory
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "ID Afkir"
+// @Success 200 {object} models.MessageResponse "Dihapus"
+// @Router /api/inventory/rusak/{id} [delete]
 func DeleteBarangRusak(c *fiber.Ctx) error {
 	id := c.Params("id")
 
@@ -437,8 +576,19 @@ func DeleteBarangRusak(c *fiber.Ctx) error {
 }
 
 // TUTUP BUKU & LAPORAN
-
+//
 // 1. FUNGSI TUTUP BUKU BULLETPROOF (Anti Zona Waktu, Mapping Error & Plural Table)
+//
+// TutupBukuHarian godoc
+// @Summary Jalankan Mesin Tutup Buku Dapur (Sinkronisasi Akhir)
+// @Description Mesin raksasa yang mengakumulasi hasil matang, dikurangi nota terkirim, dikurangi nota PO, dikurangi afkir, dan akhirnya menyimpulkan Sisa Layak Jual (stok nyantol) serta mencetak Jurnal Efisiensi.
+// @Tags 13. Laporan Penutup (End of Day)
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param payload body models.TutupBukuInput true "Tanggal tutup buku"
+// @Success 200 {object} models.MessageResponse "Berhasil dikalkulasi"
+// @Router /api/produksi/tutup-buku [post]
 func TutupBukuHarian(c *fiber.Ctx) error {
 	var input struct {
 		Tanggal string `json:"tanggal"`
@@ -608,6 +758,17 @@ func TutupBukuHarian(c *fiber.Ctx) error {
 }
 
 // 2. FUNGSI TAMPIL LAYAR LAPORAN (Menampilkan Angka 0 Pcs)
+//
+// GetJurnalTutupBuku godoc
+// @Summary Ambil Hasil Jurnal Tutup Buku
+// @Description Mengambil laporan Jurnal Efisiensi (Waste) dan tabel sisa layak jual yang dihasilkan mesin tutup buku.
+// @Tags 13. Laporan Penutup (End of Day)
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tanggal query string true "Tanggal tutup buku (YYYY-MM-DD)"
+// @Success 200 {object} models.JurnalTutupBukuResponse "Data jurnal berhasil ditarik"
+// @Router /api/produksi/jurnal [get]
 func GetJurnalTutupBuku(c *fiber.Ctx) error {
 	tgl := c.Query("tanggal")
 	var jurnal []models.JurnalEfisiensi
@@ -645,6 +806,17 @@ func GetJurnalTutupBuku(c *fiber.Ctx) error {
 }
 
 // KONVERSI (TARIK SISA KEMARIN)
+//
+// GetSisaLayakJualKemarin godoc
+// @Summary Tarik Sisa Layak Jual (H-1)
+// @Description Mengambil data sisa layak jual hari-hari sebelumnya (berdasarkan batas kadaluwarsa barang) yang masih bisa diseret untuk pengiriman hari ini.
+// @Tags 11. Operasional Inventory
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tanggal query string true "Tanggal pengiriman hari ini (YYYY-MM-DD)"
+// @Success 200 {array} models.SisaLayakJual "Data sisa kemarin ditarik"
+// @Router /api/konversi/sisa-kemarin [get]
 func GetSisaLayakJualKemarin(c *fiber.Ctx) error {
 	tgl := c.Query("tanggal")
 
@@ -665,12 +837,32 @@ func GetSisaLayakJualKemarin(c *fiber.Ctx) error {
 }
 
 // STOCK OPNAME (SIDAK GUDANG)
+//
+// GetOpname godoc
+// @Summary Ambil Riwayat Stock Opname (Sidak Fisik)
+// @Description Menampilkan histori koreksi paksa jumlah stok bahan fisik di gudang.
+// @Tags 11. Operasional Inventory
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {array} models.StockOpname "Berhasil ditarik"
+// @Router /api/opname [get]
 func GetOpname(c *fiber.Ctx) error {
 	var opname []models.StockOpname
 	DB.Preload("Bahan").Order("id desc").Limit(50).Find(&opname)
 	return c.JSON(opname)
 }
 
+// CreateOpname godoc
+// @Summary Eksekusi Stock Opname
+// @Description Memperbarui stok mutlak database dengan stok fisik nyata (menyesuaikan selisih/tumpah secara paksa).
+// @Tags 11. Operasional Inventory
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param payload body models.StockOpnameInput true "Data penyesuaian stok fisik"
+// @Success 200 {object} models.MessageResponse "Opname dicatat"
+// @Router /api/opname [post]
 func CreateOpname(c *fiber.Ctx) error {
 	var input struct {
 		BahanID    uint    `json:"bahan_id"`

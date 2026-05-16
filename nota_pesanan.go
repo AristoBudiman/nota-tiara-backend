@@ -12,6 +12,18 @@ import (
 )
 
 // NOTA PESANAN
+//
+// GetNextNotaPesananNumber godoc
+// @Summary Dapatkan Nomor PO Berikutnya
+// @Description Meng-generate nomor nota pesanan urut berdasarkan tanggal dan ID toko/Pabrik.
+// @Tags 09. Nota Pesanan (PO)
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tanggal query string false "Format: YYYY-MM-DD (Default: Hari ini)"
+// @Param toko_id query string false "ID Toko (Isi '0' atau biarkan kosong untuk PABRIK)"
+// @Success 200 {object} models.NextNotaResponse "Berhasil mendapatkan nomor PO"
+// @Router /api/pesanan/next-number [get]
 func GetNextNotaPesananNumber(c *fiber.Ctx) error {
 	tgl := c.Query("tanggal") // 2026-04-30
 	tglStr := strings.ReplaceAll(tgl, "-", "")
@@ -56,6 +68,18 @@ func GetNextNotaPesananNumber(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"no_nota": noNota})
 }
 
+// CreateNotaPesanan godoc
+// @Summary Buat Nota Pesanan (PO) Baru
+// @Description Membuat transaksi pre-order. Jika terdapat Uang Muka (DP) atau langsung lunas, otomatis masuk ke Brankas/Kas.
+// @Tags 09. Nota Pesanan (PO)
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param payload body models.NotaPesananInput true "Data lengkap pesanan beserta detail barang dan kemasan"
+// @Success 200 {object} models.MessageResponse "Pesanan berhasil dibuat"
+// @Failure 400 {object} models.ErrorResponse "Format data JSON salah"
+// @Failure 500 {object} models.ErrorResponse "Kesalahan eksekusi database"
+// @Router /api/pesanan [post]
 func CreateNotaPesanan(c *fiber.Ctx) error {
 	var input struct {
 		NoNota           string  `json:"no_nota"`
@@ -187,6 +211,19 @@ func CreateNotaPesanan(c *fiber.Ctx) error {
 }
 
 // UPDATE PO
+//
+// UpdateNotaPesanan godoc
+// @Summary Update Data Pesanan (PO)
+// @Description Memperbarui data pesanan dan menghitung ulang sisa tagihan. Sistem akan otomatis sinkronisasi perubahan DP atau Pelunasan ke Kas.
+// @Tags 09. Nota Pesanan (PO)
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "ID Nota Pesanan"
+// @Param payload body models.NotaPesananInput true "Data revisi pesanan"
+// @Success 200 {object} models.MessageResponse "Pesanan berhasil diupdate"
+// @Failure 400 {object} models.ErrorResponse "Format data JSON salah"
+// @Router /api/pesanan/{id} [post]
 func UpdateNotaPesanan(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var input struct {
@@ -357,6 +394,18 @@ func UpdateNotaPesanan(c *fiber.Ctx) error {
 }
 
 // Batalkan Pesanan PO (Soft Cancel & Tarik Kas)
+//
+// BatalkanPesanan godoc
+// @Summary Batalkan Pesanan PO
+// @Description Mengubah status pesanan menjadi DIBATALKAN. Sistem otomatis menarik (rollback) DP dan uang Pelunasan dari Brankas Kas, serta mengembalikan stok kemasan jika sudah dipotong.
+// @Tags 09. Nota Pesanan (PO)
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "ID Nota Pesanan"
+// @Success 200 {object} models.MessageResponse "Pesanan berhasil dibatalkan"
+// @Failure 404 {object} models.ErrorResponse "Pesanan tidak ditemukan"
+// @Router /api/pesanan/{id}/batal [put]
 func BatalkanPesanan(c *fiber.Ctx) error {
 	id := c.Params("id")
 	tx := DB.Begin()
@@ -404,6 +453,18 @@ func BatalkanPesanan(c *fiber.Ctx) error {
 }
 
 // PULIHKAN NOTA PESANAN (PO)
+//
+// PulihkanPesanan godoc
+// @Summary Pulihkan Pesanan PO
+// @Description Mengembalikan status pesanan yang batal menjadi MENUNGGU, dan menyuntikkan ulang uang DP/Pelunasan ke Brankas Kas.
+// @Tags 09. Nota Pesanan (PO)
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "ID Nota Pesanan"
+// @Success 200 {object} models.MessageResponse "Pesanan berhasil dipulihkan"
+// @Failure 404 {object} models.ErrorResponse "Pesanan tidak ditemukan"
+// @Router /api/pesanan/{id}/pulihkan [put]
 func PulihkanPesanan(c *fiber.Ctx) error {
 	id := c.Params("id")
 	tx := DB.Begin()
@@ -457,6 +518,17 @@ func PulihkanPesanan(c *fiber.Ctx) error {
 }
 
 // 1. Get Semua Riwayat Pesanan
+//
+// GetRiwayatPesanan godoc
+// @Summary Ambil Riwayat Pesanan (PO)
+// @Description Menarik seluruh data pesanan (PO) lengkap dengan relasi toko dan detail barang, diurutkan dari yang terbaru.
+// @Tags 09. Nota Pesanan (PO)
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {array} models.NotaPesanan "Berhasil menarik data riwayat"
+// @Failure 500 {object} models.ErrorResponse "Kesalahan server"
+// @Router /api/pesanan/riwayat [get]
 func GetRiwayatPesanan(c *fiber.Ctx) error {
 	var pesanan []models.NotaPesanan
 	// Urutkan dari yang terbaru, hapus Where("riwayat") yang error
@@ -467,6 +539,18 @@ func GetRiwayatPesanan(c *fiber.Ctx) error {
 }
 
 // GET PO BY ID
+//
+// GetNotaPesananByID godoc
+// @Summary Ambil Detail Pesanan (Berdasarkan ID)
+// @Description Menarik satu data pesanan spesifik beserta hierarki detail barang dan kemasannya untuk ditampilkan di form edit.
+// @Tags 09. Nota Pesanan (PO)
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "ID Nota Pesanan"
+// @Success 200 {object} models.NotaPesanan "Berhasil menarik detail pesanan"
+// @Failure 404 {object} models.ErrorResponse "Pesanan tidak ditemukan"
+// @Router /api/pesanan/{id} [get]
 func GetNotaPesananByID(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var pesanan models.NotaPesanan
@@ -479,6 +563,17 @@ func GetNotaPesananByID(c *fiber.Ctx) error {
 	return c.JSON(pesanan)
 }
 
+// GetCatatanPesanan godoc
+// @Summary Ambil Catatan Pesanan Harian
+// @Description Menarik daftar rekap barang yang harus diproduksi/disiapkan pada hari tertentu.
+// @Tags 09. Nota Pesanan (PO)
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tanggal query string false "Format YYYY-MM-DD (Tanggal Pengiriman)"
+// @Success 200 {array} models.CatatanPesananResponse "Berhasil menarik catatan pesanan harian"
+// @Failure 500 {object} models.ErrorResponse "Kesalahan eksekusi database"
+// @Router /api/pesanan/catatan [get]
 func GetCatatanPesanan(c *fiber.Ctx) error {
 	tgl := c.Query("tanggal") // Cukup kirim 1 tanggal (hari H)
 

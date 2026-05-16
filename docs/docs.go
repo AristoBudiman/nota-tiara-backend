@@ -17,6 +17,2506 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/api/aset/live": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Mengkalkulasi total harta kekayaan real-time (Kas, Piutang, Persediaan Gudang) dikurangi Hutang sampai tanggal target.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "15. Analisis \u0026 Aset"
+                ],
+                "summary": "Dashboard Aset Live",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tanggal batas akhir kalkulasi (Format: YYYY-MM-DD)",
+                        "name": "date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Tanggal mulai untuk hitung total Prive/Pengeluaran RT (Format: YYYY-MM-DD)",
+                        "name": "start_date",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Data live aset berhasil ditarik",
+                        "schema": {
+                            "$ref": "#/definitions/models.AnalisisAsetResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/aset/riwayat": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Menarik riwayat snapshot kekayaan per bulan, diurutkan dari yang terbaru.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "15. Analisis \u0026 Aset"
+                ],
+                "summary": "Riwayat Pertumbuhan Aset",
+                "responses": {
+                    "200": {
+                        "description": "Data riwayat aset ditarik",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.AsetSnapshot"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/aset/snapshot": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Mengunci dan menyimpan nilai kalkulasi aset akhir bulan ke dalam riwayat, agar pertumbuhan kekayaan (profit bersih bulanan) bisa diukur dengan akurat.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "15. Analisis \u0026 Aset"
+                ],
+                "summary": "Kunci Snapshot Aset (Tutup Bulan)",
+                "parameters": [
+                    {
+                        "description": "Tanggal / Bulan kunci",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.SnapshotAsetInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Snapshot berhasil dikunci",
+                        "schema": {
+                            "$ref": "#/definitions/models.MessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Format tanggal salah",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/bahan": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Mengambil daftar master bahan baku gudang, diurutkan berdasarkan urutan tampilan.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "05. Master Bahan Baku"
+                ],
+                "summary": "Ambil Seluruh Master Bahan",
+                "responses": {
+                    "200": {
+                        "description": "List data bahan berhasil ditarik",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.Bahan"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Menyimpan data master bahan baku baru ke gudang.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "05. Master Bahan Baku"
+                ],
+                "summary": "Buat Master Bahan Baru",
+                "parameters": [
+                    {
+                        "description": "Data Bahan utuh",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.BahanInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Bahan berhasil dibuat",
+                        "schema": {
+                            "$ref": "#/definitions/models.Bahan"
+                        }
+                    },
+                    "400": {
+                        "description": "Format JSON tidak valid",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Kesalahan eksekusi database",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/bahan/reorder": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Memperbarui posisi urutan bahan baku untuk tampilan di form.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "05. Master Bahan Baku"
+                ],
+                "summary": "Update Urutan Tampilan Bahan",
+                "parameters": [
+                    {
+                        "description": "Array of object key: id, urutan",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.UrutanBahanInput"
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Urutan bahan berhasil diperbarui",
+                        "schema": {
+                            "$ref": "#/definitions/models.MessageResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/bahan/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Memperbarui profil, satuan, atau harga bahan baku berdasarkan ID.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "05. Master Bahan Baku"
+                ],
+                "summary": "Update Master Bahan",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID Bahan",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Data update bahan utuh",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.BahanInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Bahan berhasil diupdate",
+                        "schema": {
+                            "$ref": "#/definitions/models.MessageResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Bahan tidak ditemukan",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Menghapus master bahan baku dari daftar aktif.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "05. Master Bahan Baku"
+                ],
+                "summary": "Hapus Master Bahan (Soft Delete)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID Bahan",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Bahan berhasil dihapus",
+                        "schema": {
+                            "$ref": "#/definitions/models.MessageResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/barangs": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Mengambil daftar master barang lengkap dengan relasi resep dan kemasan, diurutkan berdasarkan urutan tampilan.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "03. Master Barang"
+                ],
+                "summary": "Ambil Seluruh Master Barang",
+                "responses": {
+                    "200": {
+                        "description": "List data barang berhasil ditarik",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.Barang"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Menyimpan data master barang baru beserta kebutuhan kemasannya (kardus/plastik) jika ada.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "03. Master Barang"
+                ],
+                "summary": "Buat Master Barang Baru",
+                "parameters": [
+                    {
+                        "description": "Data Barang utuh",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.BarangInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Barang dan Kemasan berhasil dibuat",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Format JSON tidak valid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Gagal menyimpan ke database",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/api/barangs/reorder": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Memperbarui posisi/urutan barang untuk tampilan di form pembuatan nota. (Dipanggil saat Drag \u0026 Drop di UI Vue)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "03. Master Barang"
+                ],
+                "summary": "Update Urutan Tampilan Barang",
+                "parameters": [
+                    {
+                        "description": "Array of object dengan key: id, urutan",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.UrutanBarangInput"
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Urutan barang berhasil diperbarui",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Format data salah",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/api/barangs/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Memperbarui data master barang beserta list kemasannya berdasarkan ID.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "03. Master Barang"
+                ],
+                "summary": "Update Master Barang",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID Barang",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Data Update Barang utuh",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.BarangInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Barang berhasil diupdate",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Format JSON tidak valid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Barang tidak ditemukan",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Menghapus master barang dari daftar aktif (masuk ke tong sampah).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "03. Master Barang"
+                ],
+                "summary": "Hapus Master Barang (Soft Delete)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID Barang",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Barang berhasil dihapus",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/api/catatan-besar": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Mengambil laporan rekapitulasi kirim \u0026 retur barang yang difilter berdasarkan tanggal dan siklus.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "10. Laporan \u0026 Rangkuman"
+                ],
+                "summary": "Laporan Catatan Besar",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Format YYYY-MM-DD (Default: Hari ini)",
+                        "name": "tanggal",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "HARIAN",
+                            "SiklusDua",
+                            "SiklusKamisSenin",
+                            "SiklusJumatSelasa",
+                            "SiklusSabtuRabu"
+                        ],
+                        "type": "string",
+                        "description": "Filter Siklus",
+                        "name": "siklus",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Berhasil menarik catatan besar",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.CatatanBesarResponse"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Kesalahan eksekusi database",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/inventory/rusak": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Menampilkan data barang terbuang/afkir harian.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "11. Operasional Inventory"
+                ],
+                "summary": "Ambil Riwayat Afkir / Gratisan",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tanggal filter (YYYY-MM-DD)",
+                        "name": "tanggal",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Berhasil ditarik",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.BarangRusak"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Menyimpan jumlah roti yang dibuang/gratis, akan otomatis mengurangi jumlah Sisa Layak Jual saat Tutup Buku nanti malam.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "11. Operasional Inventory"
+                ],
+                "summary": "Catat Barang Rusak / Afkir",
+                "parameters": [
+                    {
+                        "description": "Data afkir",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.BarangRusakInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Dicatat",
+                        "schema": {
+                            "$ref": "#/definitions/models.MessageResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/inventory/rusak/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Menghapus riwayat afkir. Kalkulasi mesin Tutup Buku akan menyesuaikan sendiri.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "11. Operasional Inventory"
+                ],
+                "summary": "Batal Catat Afkir",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID Afkir",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Dihapus",
+                        "schema": {
+                            "$ref": "#/definitions/models.MessageResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/kas": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Menarik semua catatan transaksi masuk/keluar dari brankas secara menurun (terbaru di atas).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "14. Kas \u0026 Keuangan"
+                ],
+                "summary": "Ambil Riwayat Transaksi Kas",
+                "responses": {
+                    "200": {
+                        "description": "Berhasil menarik data kas",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.TransaksiKas"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Kesalahan eksekusi database",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Menyimpan transaksi kas secara manual, khusus untuk kategori non-sistem seperti pengeluaran rumah tangga atau setoran modal.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "14. Kas \u0026 Keuangan"
+                ],
+                "summary": "Catat Transaksi Kas Manual",
+                "parameters": [
+                    {
+                        "description": "Data transaksi kas",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.KasInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Transaksi kas berhasil dicatat",
+                        "schema": {
+                            "$ref": "#/definitions/models.MessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Format data JSON salah",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Kesalahan eksekusi database",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/kas/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Menghapus paksa catatan kas jika terjadi salah ketik atau salah input nominal.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "14. Kas \u0026 Keuangan"
+                ],
+                "summary": "Hapus Transaksi Kas",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID Kas",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Transaksi kas berhasil dihapus",
+                        "schema": {
+                            "$ref": "#/definitions/models.MessageResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/konversi/sisa-kemarin": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Mengambil data sisa layak jual hari-hari sebelumnya (berdasarkan batas kadaluwarsa barang) yang masih bisa diseret untuk pengiriman hari ini.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "11. Operasional Inventory"
+                ],
+                "summary": "Tarik Sisa Layak Jual (H-1)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tanggal pengiriman hari ini (YYYY-MM-DD)",
+                        "name": "tanggal",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Data sisa kemarin ditarik",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.SisaLayakJual"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/opname": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Menampilkan histori koreksi paksa jumlah stok bahan fisik di gudang.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "11. Operasional Inventory"
+                ],
+                "summary": "Ambil Riwayat Stock Opname (Sidak Fisik)",
+                "responses": {
+                    "200": {
+                        "description": "Berhasil ditarik",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.StockOpname"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Memperbarui stok mutlak database dengan stok fisik nyata (menyesuaikan selisih/tumpah secara paksa).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "11. Operasional Inventory"
+                ],
+                "summary": "Eksekusi Stock Opname",
+                "parameters": [
+                    {
+                        "description": "Data penyesuaian stok fisik",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.StockOpnameInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Opname dicatat",
+                        "schema": {
+                            "$ref": "#/definitions/models.MessageResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/pembelian": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Menarik riwayat belanja bahan fisik.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "11. Operasional Inventory"
+                ],
+                "summary": "Riwayat Pembelian Bahan Baku",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tanggal Mulai (YYYY-MM-DD)",
+                        "name": "start",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Tanggal Akhir (YYYY-MM-DD)",
+                        "name": "end",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Berhasil ditarik",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.PembelianBahan"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Mencatat belanja bahan, otomatis menambah stok gudang, menimpa harga beli terbaru, dan memotong kas (jika lunas).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "11. Operasional Inventory"
+                ],
+                "summary": "Catat Pembelian Bahan (Otomatis Tambah Stok)",
+                "parameters": [
+                    {
+                        "description": "Data pembelian lengkap",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.PembelianBahanInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Pembelian berhasil dicatat",
+                        "schema": {
+                            "$ref": "#/definitions/models.MessageResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Gagal potong kas/stok",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/pembelian/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Membatalkan transaksi belanja, mengembalikan stok gudang ke semula, dan memulihkan saldo kas jika terlanjur lunas.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "11. Operasional Inventory"
+                ],
+                "summary": "Batalkan Pembelian (Rollback Stok \u0026 Kas)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID Pembelian",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Dibatalkan",
+                        "schema": {
+                            "$ref": "#/definitions/models.MessageResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/pembelian/{id}/status": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Mengubah status lunas pembelian bahan. Otomatis menarik uang atau memotong kas secara sinkron.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "11. Operasional Inventory"
+                ],
+                "summary": "Update Status Pembayaran Belanja (Hutang/Lunas)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID Pembelian",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Saklar Lunas",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.StatusPembelianInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Status diupdate",
+                        "schema": {
+                            "$ref": "#/definitions/models.MessageResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/pengaturan/kas": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Mengecek apakah fitur sinkronisasi otomatis antara Nota/Pembelian ke Brankas Kas sedang menyala atau mati.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "14. Kas \u0026 Keuangan"
+                ],
+                "summary": "Cek Status Saklar Kas",
+                "responses": {
+                    "200": {
+                        "description": "Status sinkronisasi",
+                        "schema": {
+                            "$ref": "#/definitions/models.PengaturanKasResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Menghidupkan atau mematikan sinkronisasi otomatis (Robot Kas) untuk Nota dan Pembelian.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "14. Kas \u0026 Keuangan"
+                ],
+                "summary": "Ubah Status Saklar Kas",
+                "parameters": [
+                    {
+                        "description": "Payload saklar",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.ToggleKasInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Status sinkronisasi diperbarui",
+                        "schema": {
+                            "$ref": "#/definitions/models.MessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Format data JSON salah",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/pesanan": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Membuat transaksi pre-order. Jika terdapat Uang Muka (DP) atau langsung lunas, otomatis masuk ke Brankas/Kas.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "09. Nota Pesanan (PO)"
+                ],
+                "summary": "Buat Nota Pesanan (PO) Baru",
+                "parameters": [
+                    {
+                        "description": "Data lengkap pesanan beserta detail barang dan kemasan",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.NotaPesananInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Pesanan berhasil dibuat",
+                        "schema": {
+                            "$ref": "#/definitions/models.MessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Format data JSON salah",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Kesalahan eksekusi database",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/pesanan/catatan": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Menarik daftar rekap barang yang harus diproduksi/disiapkan pada hari tertentu.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "09. Nota Pesanan (PO)"
+                ],
+                "summary": "Ambil Catatan Pesanan Harian",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Format YYYY-MM-DD (Tanggal Pengiriman)",
+                        "name": "tanggal",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Berhasil menarik catatan pesanan harian",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.CatatanPesananResponse"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Kesalahan eksekusi database",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/pesanan/next-number": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Meng-generate nomor nota pesanan urut berdasarkan tanggal dan ID toko/Pabrik.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "09. Nota Pesanan (PO)"
+                ],
+                "summary": "Dapatkan Nomor PO Berikutnya",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Format: YYYY-MM-DD (Default: Hari ini)",
+                        "name": "tanggal",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID Toko (Isi '0' atau biarkan kosong untuk PABRIK)",
+                        "name": "toko_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Berhasil mendapatkan nomor PO",
+                        "schema": {
+                            "$ref": "#/definitions/models.NextNotaResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/pesanan/rangkuman-bulanan": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Mengambil ringkasan omzet PO, performa titik ambil (Mitra/Pabrik), dan barang terlaris.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "10. Laporan \u0026 Rangkuman"
+                ],
+                "summary": "Rangkuman Bulanan Pesanan (PO)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tanggal Mulai (YYYY-MM-DD)",
+                        "name": "start",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Tanggal Akhir (YYYY-MM-DD)",
+                        "name": "end",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Berhasil menarik rangkuman bulanan PO",
+                        "schema": {
+                            "$ref": "#/definitions/models.RangkumanPesananResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/pesanan/riwayat": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Menarik seluruh data pesanan (PO) lengkap dengan relasi toko dan detail barang, diurutkan dari yang terbaru.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "09. Nota Pesanan (PO)"
+                ],
+                "summary": "Ambil Riwayat Pesanan (PO)",
+                "responses": {
+                    "200": {
+                        "description": "Berhasil menarik data riwayat",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.NotaPesanan"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Kesalahan server",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/pesanan/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Menarik satu data pesanan spesifik beserta hierarki detail barang dan kemasannya untuk ditampilkan di form edit.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "09. Nota Pesanan (PO)"
+                ],
+                "summary": "Ambil Detail Pesanan (Berdasarkan ID)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID Nota Pesanan",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Berhasil menarik detail pesanan",
+                        "schema": {
+                            "$ref": "#/definitions/models.NotaPesanan"
+                        }
+                    },
+                    "404": {
+                        "description": "Pesanan tidak ditemukan",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Memperbarui data pesanan dan menghitung ulang sisa tagihan. Sistem akan otomatis sinkronisasi perubahan DP atau Pelunasan ke Kas.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "09. Nota Pesanan (PO)"
+                ],
+                "summary": "Update Data Pesanan (PO)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID Nota Pesanan",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Data revisi pesanan",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.NotaPesananInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Pesanan berhasil diupdate",
+                        "schema": {
+                            "$ref": "#/definitions/models.MessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Format data JSON salah",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/pesanan/{id}/batal": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Mengubah status pesanan menjadi DIBATALKAN. Sistem otomatis menarik (rollback) DP dan uang Pelunasan dari Brankas Kas, serta mengembalikan stok kemasan jika sudah dipotong.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "09. Nota Pesanan (PO)"
+                ],
+                "summary": "Batalkan Pesanan PO",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID Nota Pesanan",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Pesanan berhasil dibatalkan",
+                        "schema": {
+                            "$ref": "#/definitions/models.MessageResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Pesanan tidak ditemukan",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/pesanan/{id}/pulihkan": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Mengembalikan status pesanan yang batal menjadi MENUNGGU, dan menyuntikkan ulang uang DP/Pelunasan ke Brankas Kas.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "09. Nota Pesanan (PO)"
+                ],
+                "summary": "Pulihkan Pesanan PO",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID Nota Pesanan",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Pesanan berhasil dipulihkan",
+                        "schema": {
+                            "$ref": "#/definitions/models.MessageResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Pesanan tidak ditemukan",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/produksi/jurnal": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Mengambil laporan Jurnal Efisiensi (Waste) dan tabel sisa layak jual yang dihasilkan mesin tutup buku.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "13. Laporan Penutup (End of Day)"
+                ],
+                "summary": "Ambil Hasil Jurnal Tutup Buku",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tanggal tutup buku (YYYY-MM-DD)",
+                        "name": "tanggal",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Data jurnal berhasil ditarik",
+                        "schema": {
+                            "$ref": "#/definitions/models.JurnalTutupBukuResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/produksi/masak": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Menampilkan riwayat pengadukan resep (batch) berdasarkan hari.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "12. Produksi \u0026 Dapur"
+                ],
+                "summary": "Ambil Catatan Masak Dapur Harian",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tanggal filter (YYYY-MM-DD)",
+                        "name": "tanggal",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Berhasil ditarik",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.ProduksiMasak"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Menyimpan data adonan dan otomatis memotong seluruh stok fisik bahan baku sesuai rasio resep.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "12. Produksi \u0026 Dapur"
+                ],
+                "summary": "Catat Masak Adonan Baru",
+                "parameters": [
+                    {
+                        "description": "Data batch masak",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.ProduksiMasakInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Dicatat",
+                        "schema": {
+                            "$ref": "#/definitions/models.MessageResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/produksi/masak/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Membatalkan catatan pengadukan resep dan mengembalikan stok fisik bahan baku ke gudang.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "12. Produksi \u0026 Dapur"
+                ],
+                "summary": "Batal Masak Adonan (Rollback Stok Mentah)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID Masak",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Dibatalkan",
+                        "schema": {
+                            "$ref": "#/definitions/models.MessageResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/produksi/matang": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Menampilkan riwayat hasil matang roti yang sudah masuk ke buffer pengiriman.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "12. Produksi \u0026 Dapur"
+                ],
+                "summary": "Ambil Hasil Oven Matang Harian",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tanggal filter (YYYY-MM-DD)",
+                        "name": "tanggal",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Berhasil ditarik",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.ProduksiMatang"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Mencatat perolehan roti fisik dan otomatis memotong stok kardus/plastik kemasan dari gudang.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "12. Produksi \u0026 Dapur"
+                ],
+                "summary": "Catat Roti Matang Keluar Oven",
+                "parameters": [
+                    {
+                        "description": "Data hasil oven",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.ProduksiMatangInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Dicatat",
+                        "schema": {
+                            "$ref": "#/definitions/models.MessageResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/produksi/matang/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Membatalkan catatan matang dan mengembalikan bahan plastik/kardus ke gudang.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "12. Produksi \u0026 Dapur"
+                ],
+                "summary": "Batal Catat Matang (Rollback Stok Kemasan)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID Matang",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Dibatalkan",
+                        "schema": {
+                            "$ref": "#/definitions/models.MessageResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/produksi/tutup-buku": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Mesin raksasa yang mengakumulasi hasil matang, dikurangi nota terkirim, dikurangi nota PO, dikurangi afkir, dan akhirnya menyimpulkan Sisa Layak Jual (stok nyantol) serta mencetak Jurnal Efisiensi.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "13. Laporan Penutup (End of Day)"
+                ],
+                "summary": "Jalankan Mesin Tutup Buku Dapur (Sinkronisasi Akhir)",
+                "parameters": [
+                    {
+                        "description": "Tanggal tutup buku",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.TutupBukuInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Berhasil dikalkulasi",
+                        "schema": {
+                            "$ref": "#/definitions/models.MessageResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/profil": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Mengambil data profil Tiara Bakery (Nama dan Alamat) untuk keperluan header nota PDF.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "02. Master Profil"
+                ],
+                "summary": "Ambil Profil Perusahaan",
+                "responses": {
+                    "200": {
+                        "description": "Berhasil menarik data profil",
+                        "schema": {
+                            "$ref": "#/definitions/models.ProfilTiara"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/rangkuman": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Mengambil rangkuman total pendapatan, persentase retur, serta performa tiap toko dan tiap barang.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "10. Laporan \u0026 Rangkuman"
+                ],
+                "summary": "Rangkuman Omzet Global",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tanggal Mulai (YYYY-MM-DD)",
+                        "name": "start",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Tanggal Akhir (YYYY-MM-DD)",
+                        "name": "end",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Berhasil menarik data rangkuman global",
+                        "schema": {
+                            "$ref": "#/definitions/models.RangkumanResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Tanggal wajib diisi",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/rangkuman-per-toko": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Melihat performa barang (total kirim vs laku) untuk satu toko spesifik pada rentang tanggal tertentu.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "10. Laporan \u0026 Rangkuman"
+                ],
+                "summary": "Rangkuman Spesifik Per Toko",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tanggal Mulai (YYYY-MM-DD)",
+                        "name": "start",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Tanggal Akhir (YYYY-MM-DD)",
+                        "name": "end",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "ID Toko yang difilter",
+                        "name": "toko_id",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Berhasil menarik data performa toko",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.RangkumanPerTokoResponse"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "ID Toko tidak valid",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/resep": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Mengambil daftar master resep beserta detail array komponen bahan-bahannya.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "06. Master Resep"
+                ],
+                "summary": "Ambil Seluruh Master Resep",
+                "responses": {
+                    "200": {
+                        "description": "List data resep ditarik",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.Resep"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Menyimpan data master resep baru lengkap dengan komposisi bahannya.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "06. Master Resep"
+                ],
+                "summary": "Buat Master Resep Baru",
+                "parameters": [
+                    {
+                        "description": "Data Resep utuh",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.ResepInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Resep berhasil dibuat",
+                        "schema": {
+                            "$ref": "#/definitions/models.MessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Format JSON salah",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/resep/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Memperbarui data resep dan list komposisi bahan berdasarkan ID resep.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "06. Master Resep"
+                ],
+                "summary": "Update Master Resep",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID Resep",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Data Resep utuh",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.ResepInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Resep berhasil diupdate",
+                        "schema": {
+                            "$ref": "#/definitions/models.MessageResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Menghapus master resep dari daftar aktif.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "06. Master Resep"
+                ],
+                "summary": "Hapus Master Resep (Soft Delete)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID Resep",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Resep berhasil dihapus",
+                        "schema": {
+                            "$ref": "#/definitions/models.MessageResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/sampah": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Mengambil semua data master (toko, barang, bahan, resep) yang berstatus soft-deleted.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "07. Master Sampah"
+                ],
+                "summary": "Ambil Data Tong Sampah",
+                "responses": {
+                    "200": {
+                        "description": "Berhasil menarik data sampah",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/api/sampah/{type}/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Mengembalikan data master yang ada di tong sampah ke daftar aktif. Parameter type bisa berisi: 'toko', 'barang', 'bahan', atau 'resep'.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "07. Master Sampah"
+                ],
+                "summary": "Pulihkan Data Terhapus",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Jenis Data (toko/barang/bahan/resep)",
+                        "name": "type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "ID Data",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Data berhasil dipulihkan",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Jenis data tidak valid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/api/tokos": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Mengambil data seluruh mitra toko beserta pengaturan siklus tagihannya.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "04. Master Toko"
+                ],
+                "summary": "Ambil Seluruh Master Toko",
+                "responses": {
+                    "200": {
+                        "description": "Berhasil menarik data toko",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.Toko"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Menyimpan data mitra toko baru beserta aturan siklus tagihannya.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "04. Master Toko"
+                ],
+                "summary": "Buat Master Toko Baru",
+                "parameters": [
+                    {
+                        "description": "Data Toko Baru",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.Toko"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Toko berhasil dibuat",
+                        "schema": {
+                            "$ref": "#/definitions/models.Toko"
+                        }
+                    },
+                    "400": {
+                        "description": "Format JSON tidak valid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Gagal menyimpan ke database",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/api/tokos/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Memperbarui profil mitra toko dan aturan siklus tagihannya berdasarkan ID.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "04. Master Toko"
+                ],
+                "summary": "Update Master Toko",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID Toko",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Data Update Toko",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.Toko"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Toko berhasil diupdate",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Format JSON tidak valid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Toko tidak ditemukan",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Menghapus mitra toko dari daftar aktif (masuk ke tong sampah).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "04. Master Toko"
+                ],
+                "summary": "Hapus Master Toko (Soft Delete)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID Toko",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Toko berhasil dihapus",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/login": {
             "post": {
                 "description": "Endpoint publik untuk mendapatkan JWT Token berdasarkan kredensial Superadmin atau Sales.",
@@ -27,7 +2527,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Authentication"
+                    "01. Authentication"
                 ],
                 "summary": "Autentikasi User (Login)",
                 "parameters": [
@@ -59,6 +2559,1930 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
+                }
+            }
+        },
+        "/notas": {
+            "get": {
+                "description": "Menampilkan daftar keseluruhan riwayat nota kiriman dari yang terbaru (descending).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "08. Nota Reguler"
+                ],
+                "summary": "Ambil Semua Riwayat Nota",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.Nota"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Kesalahan server",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Memasukkan data nota kiriman harian beserta detail array barangnya ke database. Akan memicu trigger sinkronisasi brankas (Kas) jika nota ditandai lunas.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "08. Nota Reguler"
+                ],
+                "summary": "Buat Nota Reguler baru",
+                "parameters": [
+                    {
+                        "description": "Data lengkap nota dan detail barang",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.NotaInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Pesan: Nota berhasil disimpan!",
+                        "schema": {
+                            "$ref": "#/definitions/models.MessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Format data JSON tidak valid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Kesalahan eksekusi database / kas",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/notas/next-number": {
+            "get": {
+                "description": "Meng-generate nomor nota urut yang pintar berdasarkan tanggal dan ID toko (Cth: NT/20260427/15-0017)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "08. Nota Reguler"
+                ],
+                "summary": "Dapatkan nomor nota berikutnya",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter berdasarkan ID Toko (Jika 0 = Pabrik)",
+                        "name": "toko_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Format: YYYY-MM-DD (Default: Hari ini)",
+                        "name": "tanggal",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.NextNotaResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/notas/{id}": {
+            "get": {
+                "description": "Menampilkan data spesifik sebuah nota beserta hierarki relasinya (Detail Nota, Barang terkait, dan Toko).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "08. Nota Reguler"
+                ],
+                "summary": "Ambil Detail Nota (Berdasarkan ID)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID Nota",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.Nota"
+                        }
+                    },
+                    "404": {
+                        "description": "Nota tidak ditemukan",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Mengubah data nota kiriman historis berdasarkan ID. Endpoint ini sangat krusial karena otomatis menghitung selisih uang jika status lunas/tidak lunas berubah.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "08. Nota Reguler"
+                ],
+                "summary": "Ubah data Nota Reguler",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID Nota",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Data nota yang akan direvisi",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.NotaInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Pesan: Nota berhasil diupdate!",
+                        "schema": {
+                            "$ref": "#/definitions/models.MessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Format data JSON tidak valid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Nota tidak ditemukan",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Kesalahan eksekusi database / kas",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/notas/{id}/batal": {
+            "put": {
+                "description": "Mengubah status nota menjadi 'DIBATALKAN'. Jika sebelumnya lunas, sistem otomatis akan menarik uang dari brankas/kas untuk menjaga integritas pembukuan.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "08. Nota Reguler"
+                ],
+                "summary": "Batalkan Nota Reguler (Rollback)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID Nota",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Pesan: Nota berhasil dibatalkan",
+                        "schema": {
+                            "$ref": "#/definitions/models.MessageResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Nota tidak ditemukan",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Kesalahan saat membatalkan transaksi kas",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/notas/{id}/pulihkan": {
+            "put": {
+                "description": "Mengembalikan status nota dari 'DIBATALKAN' menjadi 'KIRIM'. Menginjeksi ulang uang ke brankas jika nota tercatat lunas.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "08. Nota Reguler"
+                ],
+                "summary": "Pulihkan Nota Reguler",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID Nota",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Pesan: Nota berhasil dipulihkan",
+                        "schema": {
+                            "$ref": "#/definitions/models.MessageResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Nota tidak ditemukan",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Kesalahan server",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/sales/dashboard": {
+            "get": {
+                "description": "Menarik 3 himpunan tugas sekaligus untuk user sales yang login: Nota aktif 8 jam terakhir, Tugas membereskan retur (Reguler), dan Tugas mengantar pesanan khusus (PO).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "16. Distribusi Lapangan"
+                ],
+                "summary": "Muat Dashboard Sales / Kurir",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.DashboardSalesResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/sales/kunjungan/{toko_id}": {
+            "get": {
+                "description": "Mengecek apakah sebuah toko memiliki nota berstatus 'KIRIM' namun belum diselesaikan proses returnya. Digunakan untuk memblokir pembuatan nota baru oleh sales.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "16. Distribusi Lapangan"
+                ],
+                "summary": "Sidak Dosa Retur Toko",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID Toko",
+                        "name": "toko_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.Nota"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "models.AnalisisAsetResponse": {
+            "type": "object",
+            "properties": {
+                "awal_prive": {
+                    "type": "string",
+                    "example": "2026-05-01"
+                },
+                "bulan_lalu": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "live": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "prive_bulan_ini": {
+                    "type": "number",
+                    "example": 1500000
+                },
+                "tanggal_analisis": {
+                    "type": "string",
+                    "example": "2026-05-16"
+                }
+            }
+        },
+        "models.AsetSnapshot": {
+            "type": "object",
+            "properties": {
+                "aset_bersih": {
+                    "type": "number"
+                },
+                "bulan": {
+                    "description": "Contoh: 2026-05-01",
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "total_hutang": {
+                    "type": "number"
+                },
+                "total_kas": {
+                    "type": "number"
+                },
+                "total_persediaan": {
+                    "type": "number"
+                },
+                "total_piutang": {
+                    "type": "number"
+                }
+            }
+        },
+        "models.Bahan": {
+            "type": "object",
+            "properties": {
+                "batas_minimum": {
+                    "type": "number"
+                },
+                "harga_saat_ini": {
+                    "description": "Update otomatis dari pembelian terakhir",
+                    "type": "number"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "nama_bahan": {
+                    "type": "string"
+                },
+                "satuan": {
+                    "description": "gr, ml, pcs",
+                    "type": "string"
+                },
+                "stok": {
+                    "type": "number"
+                },
+                "urutan": {
+                    "type": "integer"
+                }
+            }
+        },
+        "models.BahanInput": {
+            "type": "object",
+            "required": [
+                "nama_bahan",
+                "satuan"
+            ],
+            "properties": {
+                "batas_minimum": {
+                    "type": "number",
+                    "example": 5000
+                },
+                "harga_saat_ini": {
+                    "type": "number",
+                    "example": 12500
+                },
+                "nama_bahan": {
+                    "type": "string",
+                    "example": "Tepung Cakra Kembar"
+                },
+                "satuan": {
+                    "type": "string",
+                    "example": "gr"
+                },
+                "stok": {
+                    "type": "number",
+                    "example": 15000
+                }
+            }
+        },
+        "models.Barang": {
+            "type": "object",
+            "properties": {
+                "Urutan": {
+                    "type": "integer"
+                },
+                "hargaDefault": {
+                    "type": "number",
+                    "format": "float64"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "kebutuhan_adonan": {
+                    "description": "Berapa gram / fraksi per 1 roti",
+                    "type": "number"
+                },
+                "kemasan_detail": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.BarangKemasan"
+                    }
+                },
+                "masa_simpan": {
+                    "description": "Default 2 hari",
+                    "type": "integer"
+                },
+                "metode_konversi": {
+                    "description": "\"Gram\" atau \"Pcs\"",
+                    "type": "string"
+                },
+                "namaBarang": {
+                    "type": "string"
+                },
+                "resep": {
+                    "$ref": "#/definitions/models.Resep"
+                },
+                "resep_id": {
+                    "description": "TAMBAHAN MODUL INVENTORY",
+                    "type": "integer"
+                }
+            }
+        },
+        "models.BarangInput": {
+            "type": "object",
+            "properties": {
+                "HargaDefault": {
+                    "type": "number",
+                    "example": 15000
+                },
+                "NamaBarang": {
+                    "type": "string",
+                    "example": "Roti Tawar Spesial"
+                },
+                "kebutuhan_adonan": {
+                    "type": "number",
+                    "example": 0.5
+                },
+                "kemasan_detail": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.KemasanInput"
+                    }
+                },
+                "masa_simpan": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "metode_konversi": {
+                    "type": "string",
+                    "example": "BAGI"
+                },
+                "resep_id": {
+                    "type": "integer",
+                    "example": 1
+                }
+            }
+        },
+        "models.BarangKemasan": {
+            "type": "object",
+            "properties": {
+                "bahan": {
+                    "$ref": "#/definitions/models.Bahan"
+                },
+                "bahan_id": {
+                    "type": "integer"
+                },
+                "barang_id": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "kebutuhan": {
+                    "description": "(Bisa pecahan, misal 0.25)",
+                    "type": "number"
+                }
+            }
+        },
+        "models.BarangRusak": {
+            "type": "object",
+            "properties": {
+                "barang": {
+                    "$ref": "#/definitions/models.Barang"
+                },
+                "barang_id": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "keterangan": {
+                    "description": "Contoh: \"Dimakan Tikus\", \"Tester\", \"Basi\"",
+                    "type": "string"
+                },
+                "qty": {
+                    "type": "integer"
+                },
+                "tanggal": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.BarangRusakInput": {
+            "type": "object",
+            "required": [
+                "barang_id",
+                "keterangan",
+                "qty",
+                "tanggal"
+            ],
+            "properties": {
+                "barang_id": {
+                    "type": "integer",
+                    "example": 5
+                },
+                "keterangan": {
+                    "type": "string",
+                    "example": "Gosong di oven / Dikasihkan ke tetangga"
+                },
+                "qty": {
+                    "type": "integer",
+                    "example": 5
+                },
+                "tanggal": {
+                    "type": "string",
+                    "example": "2026-05-16"
+                }
+            }
+        },
+        "models.CatatanBesarResponse": {
+            "type": "object",
+            "properties": {
+                "harga_kirim": {
+                    "type": "number",
+                    "example": 750000
+                },
+                "harga_retur": {
+                    "type": "number",
+                    "example": 75000
+                },
+                "is_harian": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "nama_barang": {
+                    "type": "string",
+                    "example": "Roti Tawar"
+                },
+                "nama_toko": {
+                    "type": "string",
+                    "example": "Toko Abadi"
+                },
+                "qty_kirim": {
+                    "type": "integer",
+                    "example": 50
+                },
+                "qty_retur": {
+                    "type": "integer",
+                    "example": 5
+                },
+                "siklus": {
+                    "type": "string",
+                    "example": "HARIAN"
+                }
+            }
+        },
+        "models.CatatanPesananResponse": {
+            "type": "object",
+            "properties": {
+                "jenis_pengambilan": {
+                    "type": "string",
+                    "example": "PABRIK"
+                },
+                "nama_barang_bebas": {
+                    "type": "string",
+                    "example": "Bolu Karamel"
+                },
+                "nama_toko": {
+                    "type": "string",
+                    "example": "PABRIK"
+                },
+                "total_banyak": {
+                    "type": "integer",
+                    "example": 25
+                },
+                "total_rupiah": {
+                    "type": "number",
+                    "example": 875000
+                }
+            }
+        },
+        "models.DashboardSalesResponse": {
+            "type": "object",
+            "properties": {
+                "aktif": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.Nota"
+                    }
+                },
+                "tugas": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.Nota"
+                    }
+                },
+                "tugas_po": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.NotaPesanan"
+                    }
+                }
+            }
+        },
+        "models.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string",
+                    "example": "Terjadi kesalahan pada server"
+                }
+            }
+        },
+        "models.JurnalTutupBukuResponse": {
+            "type": "object",
+            "properties": {
+                "jurnal": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "sisa": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                }
+            }
+        },
+        "models.KasInput": {
+            "type": "object",
+            "required": [
+                "jenis",
+                "kategori",
+                "nominal",
+                "tanggal"
+            ],
+            "properties": {
+                "jenis": {
+                    "type": "string",
+                    "enum": [
+                        "MASUK",
+                        "KELUAR"
+                    ],
+                    "example": "KELUAR"
+                },
+                "kategori": {
+                    "type": "string",
+                    "enum": [
+                        "REGULER",
+                        "PESANAN",
+                        "BAHAN",
+                        "RUMAH_TANGGA"
+                    ],
+                    "example": "RUMAH_TANGGA"
+                },
+                "keterangan": {
+                    "type": "string",
+                    "example": "Beli galon dan token listrik"
+                },
+                "no_nota_ref": {
+                    "type": "string",
+                    "example": "-"
+                },
+                "nominal": {
+                    "type": "number",
+                    "example": 150000
+                },
+                "tanggal": {
+                    "type": "string",
+                    "example": "2026-05-16"
+                }
+            }
+        },
+        "models.KemasanInput": {
+            "type": "object",
+            "properties": {
+                "bahan_id": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "kebutuhan": {
+                    "type": "number",
+                    "example": 1.5
+                }
+            }
+        },
+        "models.MessageResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "example": "Operasi berhasil dilakukan"
+                }
+            }
+        },
+        "models.NextNotaResponse": {
+            "type": "object",
+            "properties": {
+                "no_nota": {
+                    "type": "string",
+                    "example": "NT/20260427/15-0017"
+                }
+            }
+        },
+        "models.Nota": {
+            "type": "object",
+            "properties": {
+                "IsHarianSnapshot": {
+                    "type": "boolean"
+                },
+                "NamaTokoSnapshot": {
+                    "description": "SNAPSHOT UNTUK MENGUNCI SEJARAH",
+                    "type": "string"
+                },
+                "SiklusSnapshot": {
+                    "type": "string"
+                },
+                "assigned_to": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "description": "PELACAK SALES",
+                    "type": "integer"
+                },
+                "details": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.NotaDetail"
+                    }
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_lunas": {
+                    "description": "'KIRIM' atau 'SELESAI'",
+                    "type": "boolean"
+                },
+                "jumlahKirim": {
+                    "description": "Hasil Perhitungan",
+                    "type": "number"
+                },
+                "jumlahRetur": {
+                    "description": "Total harga retur (Semua barang)",
+                    "type": "number"
+                },
+                "noNota": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "tanggalKirim": {
+                    "type": "string"
+                },
+                "toko": {
+                    "$ref": "#/definitions/models.Toko"
+                },
+                "tokoID": {
+                    "type": "integer"
+                },
+                "totalBayar": {
+                    "description": "JumlahKirim - JumlahRetur",
+                    "type": "number"
+                },
+                "total_diskon": {
+                    "description": "\u003c--- BARU",
+                    "type": "number"
+                },
+                "total_voucher": {
+                    "description": "\u003c--- BARU",
+                    "type": "number"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.NotaDetail": {
+            "type": "object",
+            "properties": {
+                "NamaBarangSnapshot": {
+                    "description": "SNAPSHOT UNTUK MENGUNCI SEJARAH",
+                    "type": "string"
+                },
+                "banyakKirim": {
+                    "type": "integer"
+                },
+                "banyakRetur": {
+                    "type": "integer"
+                },
+                "barang": {
+                    "$ref": "#/definitions/models.Barang"
+                },
+                "barangID": {
+                    "type": "integer"
+                },
+                "hargaJual": {
+                    "type": "number"
+                },
+                "hargaKirim": {
+                    "description": "BanyakKirim * HargaJual",
+                    "type": "number"
+                },
+                "hargaRetur": {
+                    "description": "BanyakRetur * HargaJual",
+                    "type": "number"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "notaID": {
+                    "type": "integer"
+                }
+            }
+        },
+        "models.NotaDetailInput": {
+            "type": "object",
+            "required": [
+                "banyak_kirim",
+                "barang_id",
+                "harga_jual"
+            ],
+            "properties": {
+                "banyak_kirim": {
+                    "description": "\u003c-- Disesuaikan",
+                    "type": "integer",
+                    "example": 100
+                },
+                "banyak_retur": {
+                    "description": "\u003c-- Disesuaikan",
+                    "type": "integer",
+                    "example": 5
+                },
+                "barang_id": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "harga_jual": {
+                    "description": "\u003c-- Disesuaikan",
+                    "type": "number",
+                    "example": 15000
+                },
+                "id": {
+                    "description": "0 saat Create baru, isi ID asli saat Update",
+                    "type": "integer",
+                    "example": 0
+                }
+            }
+        },
+        "models.NotaInput": {
+            "type": "object",
+            "required": [
+                "details",
+                "no_nota",
+                "status",
+                "tanggal_kirim",
+                "toko_id"
+            ],
+            "properties": {
+                "assigned_to": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "details": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.NotaDetailInput"
+                    }
+                },
+                "is_lunas": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "no_nota": {
+                    "type": "string",
+                    "example": "NT/20260427/15-0017"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "KIRIM",
+                        "DIBATALKAN",
+                        "SELESAI"
+                    ],
+                    "example": "KIRIM"
+                },
+                "tanggal_kirim": {
+                    "type": "string",
+                    "example": "2026-04-27"
+                },
+                "toko_id": {
+                    "type": "integer",
+                    "example": 5
+                },
+                "total_diskon": {
+                    "type": "number",
+                    "example": 0
+                },
+                "total_voucher": {
+                    "type": "number",
+                    "example": 50000
+                }
+            }
+        },
+        "models.NotaPesanan": {
+            "type": "object",
+            "properties": {
+                "NamaTokoSnapshot": {
+                    "description": "Catat nama toko saat itu (atau isi \"PABRIK\")",
+                    "type": "string"
+                },
+                "assigned_to": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "details": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.NotaPesananDetail"
+                    }
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_lunas": {
+                    "description": "'BELUM DIAMBIL' atau 'LUNAS/DIAMBIL'",
+                    "type": "boolean"
+                },
+                "jenisPengambilan": {
+                    "description": "'PABRIK' atau 'MITRA'",
+                    "type": "string"
+                },
+                "namaPemesan": {
+                    "type": "string"
+                },
+                "noNota": {
+                    "type": "string"
+                },
+                "ongkir": {
+                    "type": "number"
+                },
+                "sisa_tagihan": {
+                    "type": "number"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "tanggalKirim": {
+                    "type": "string"
+                },
+                "toko": {
+                    "$ref": "#/definitions/models.Toko"
+                },
+                "tokoID": {
+                    "description": "Gunakan pointer (*uint) agar bisa bernilai NULL di database jika diambil di Pabrik",
+                    "type": "integer"
+                },
+                "totalBayar": {
+                    "type": "number"
+                },
+                "total_voucher": {
+                    "description": "\u003c--- BARU",
+                    "type": "number"
+                },
+                "uang_muka": {
+                    "description": "\u003c--- BARU (DP)",
+                    "type": "number"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.NotaPesananDetail": {
+            "type": "object",
+            "properties": {
+                "NamaBarangBebas": {
+                    "description": "Ini menyimpan nama barang dari DB, ATAU nama barang kustom ketikan manual (misal: \"Kue Tart\")",
+                    "type": "string"
+                },
+                "banyak": {
+                    "type": "integer"
+                },
+                "barang": {
+                    "$ref": "#/definitions/models.Barang"
+                },
+                "barangID": {
+                    "description": "Pointer agar bisa NULL untuk barang kustom yang tidak ada di Master Barang",
+                    "type": "integer"
+                },
+                "gramasi": {
+                    "type": "number"
+                },
+                "hargaJual": {
+                    "type": "number"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_kemasan_terpotong": {
+                    "type": "boolean"
+                },
+                "kemasan_detail": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.NotaPesananDetailKemasan"
+                    }
+                },
+                "notaPesananID": {
+                    "type": "integer"
+                },
+                "resep_id": {
+                    "description": "Tambahan untuk persiapan Modul Inventory Dapur",
+                    "type": "integer"
+                },
+                "subtotal": {
+                    "description": "Banyak * HargaJual",
+                    "type": "number"
+                }
+            }
+        },
+        "models.NotaPesananDetailInput": {
+            "type": "object",
+            "required": [
+                "banyak",
+                "harga_jual",
+                "nama_barang_bebas"
+            ],
+            "properties": {
+                "banyak": {
+                    "type": "integer",
+                    "example": 50
+                },
+                "barang_id": {
+                    "description": "Bisa null jika barang custom",
+                    "type": "integer",
+                    "example": 12
+                },
+                "gramasi": {
+                    "type": "number",
+                    "example": 500
+                },
+                "harga_jual": {
+                    "type": "number",
+                    "example": 35000
+                },
+                "kemasan_detail": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.NotaPesananKemasanInput"
+                    }
+                },
+                "nama_barang_bebas": {
+                    "type": "string",
+                    "example": "Bolu Karamel Custom"
+                },
+                "resep_id": {
+                    "type": "integer",
+                    "example": 3
+                }
+            }
+        },
+        "models.NotaPesananDetailKemasan": {
+            "type": "object",
+            "properties": {
+                "bahan": {
+                    "$ref": "#/definitions/models.Bahan"
+                },
+                "bahan_id": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "kebutuhan": {
+                    "description": "Butuh berapa pcs per 1 roti kustom",
+                    "type": "number"
+                },
+                "nota_pesanan_detail_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "models.NotaPesananInput": {
+            "type": "object",
+            "required": [
+                "details",
+                "jenis_pengambilan",
+                "nama_pemesan",
+                "no_nota",
+                "status",
+                "tanggal_kirim"
+            ],
+            "properties": {
+                "assigned_to": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "details": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.NotaPesananDetailInput"
+                    }
+                },
+                "is_lunas": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "jenis_pengambilan": {
+                    "type": "string",
+                    "enum": [
+                        "PABRIK",
+                        "MITRA"
+                    ],
+                    "example": "MITRA"
+                },
+                "nama_pemesan": {
+                    "type": "string",
+                    "example": "Ibu Rina"
+                },
+                "no_nota": {
+                    "type": "string",
+                    "example": "PO/20260430/15-0001"
+                },
+                "ongkir": {
+                    "type": "number",
+                    "example": 15000
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "MENUNGGU",
+                        "DIPROSES",
+                        "DIKIRIM",
+                        "DIAMBIL",
+                        "DIBATALKAN"
+                    ],
+                    "example": "MENUNGGU"
+                },
+                "tanggal_kirim": {
+                    "type": "string",
+                    "example": "2026-04-30"
+                },
+                "toko_id": {
+                    "description": "Null jika ambil di pabrik",
+                    "type": "integer",
+                    "example": 15
+                },
+                "total_voucher": {
+                    "type": "number",
+                    "example": 10000
+                },
+                "uang_muka": {
+                    "type": "number",
+                    "example": 50000
+                }
+            }
+        },
+        "models.NotaPesananKemasanInput": {
+            "type": "object",
+            "required": [
+                "bahan_id",
+                "kebutuhan"
+            ],
+            "properties": {
+                "bahan_id": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "kebutuhan": {
+                    "type": "number",
+                    "example": 1.5
+                }
+            }
+        },
+        "models.PembelianBahan": {
+            "type": "object",
+            "properties": {
+                "bahan": {
+                    "$ref": "#/definitions/models.Bahan"
+                },
+                "bahan_id": {
+                    "type": "integer"
+                },
+                "harga_beli_satuan": {
+                    "description": "Histori harga pada hari H",
+                    "type": "number"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_lunas": {
+                    "type": "boolean"
+                },
+                "keterangan": {
+                    "type": "string"
+                },
+                "qty": {
+                    "type": "number"
+                },
+                "tanggal": {
+                    "type": "string"
+                },
+                "total_biaya": {
+                    "type": "number"
+                }
+            }
+        },
+        "models.PembelianBahanInput": {
+            "type": "object",
+            "required": [
+                "bahan_id",
+                "harga_beli_satuan",
+                "qty",
+                "tanggal"
+            ],
+            "properties": {
+                "bahan_id": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "harga_beli_satuan": {
+                    "type": "number",
+                    "example": 15000
+                },
+                "is_lunas": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "keterangan": {
+                    "type": "string",
+                    "example": "Beli di Pasar Legi"
+                },
+                "qty": {
+                    "type": "number",
+                    "example": 50
+                },
+                "tanggal": {
+                    "type": "string",
+                    "example": "2026-05-16"
+                }
+            }
+        },
+        "models.PengaturanKasResponse": {
+            "type": "object",
+            "properties": {
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "models.ProduksiMasak": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "jumlah_batch": {
+                    "description": "Berapa resep dimasak (misal: 2.5)",
+                    "type": "number"
+                },
+                "resep": {
+                    "$ref": "#/definitions/models.Resep"
+                },
+                "resep_id": {
+                    "type": "integer"
+                },
+                "tanggal": {
+                    "type": "string"
+                },
+                "total_adonan": {
+                    "description": "JumlahBatch * TargetGramasi (Prediksi Sistem)",
+                    "type": "number"
+                }
+            }
+        },
+        "models.ProduksiMasakInput": {
+            "type": "object",
+            "required": [
+                "jumlah_batch",
+                "resep_id",
+                "tanggal"
+            ],
+            "properties": {
+                "jumlah_batch": {
+                    "type": "number",
+                    "example": 1.5
+                },
+                "resep_id": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "tanggal": {
+                    "type": "string",
+                    "example": "2026-05-16"
+                }
+            }
+        },
+        "models.ProduksiMatang": {
+            "type": "object",
+            "properties": {
+                "barang": {
+                    "$ref": "#/definitions/models.Barang"
+                },
+                "barang_id": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "qty_matang": {
+                    "description": "Fisik utuh siap jual",
+                    "type": "integer"
+                },
+                "tanggal": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.ProduksiMatangInput": {
+            "type": "object",
+            "required": [
+                "barang_id",
+                "qty_matang",
+                "tanggal"
+            ],
+            "properties": {
+                "barang_id": {
+                    "type": "integer",
+                    "example": 5
+                },
+                "qty_matang": {
+                    "type": "integer",
+                    "example": 150
+                },
+                "tanggal": {
+                    "type": "string",
+                    "example": "2026-05-16"
+                }
+            }
+        },
+        "models.ProfilTiara": {
+            "type": "object",
+            "properties": {
+                "alamat": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "logoPath": {
+                    "type": "string"
+                },
+                "nama": {
+                    "type": "string"
+                },
+                "noHP": {
+                    "type": "string"
+                },
+                "noTelp": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.RangkumanPerTokoResponse": {
+            "type": "object",
+            "properties": {
+                "nama_barang": {
+                    "type": "string",
+                    "example": "Roti Manis"
+                },
+                "persentase": {
+                    "type": "number",
+                    "example": 10
+                },
+                "total_kirim": {
+                    "type": "integer",
+                    "example": 100
+                },
+                "total_laku": {
+                    "type": "integer",
+                    "example": 90
+                },
+                "total_retur": {
+                    "type": "integer",
+                    "example": 10
+                }
+            }
+        },
+        "models.RangkumanPesananResponse": {
+            "type": "object",
+            "properties": {
+                "detail_barang": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "per_titik": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "total_diskon": {
+                    "type": "number",
+                    "example": 100000
+                },
+                "total_pendapatan": {
+                    "type": "number",
+                    "example": 5000000
+                },
+                "total_pesanan": {
+                    "type": "integer",
+                    "example": 10
+                }
+            }
+        },
+        "models.RangkumanResponse": {
+            "type": "object",
+            "properties": {
+                "diskon": {
+                    "type": "number"
+                },
+                "kirim": {
+                    "type": "number"
+                },
+                "pendapatan": {
+                    "type": "number"
+                },
+                "perBarang": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.RekapBarang"
+                    }
+                },
+                "perToko": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.RekapToko"
+                    }
+                },
+                "persentase": {
+                    "type": "number"
+                },
+                "retur": {
+                    "type": "number"
+                }
+            }
+        },
+        "models.RekapBarang": {
+            "type": "object",
+            "properties": {
+                "nama": {
+                    "type": "string"
+                },
+                "persentase": {
+                    "type": "number"
+                },
+                "qty_kirim": {
+                    "type": "number"
+                },
+                "qty_laku": {
+                    "type": "number"
+                },
+                "qty_retur": {
+                    "type": "number"
+                }
+            }
+        },
+        "models.RekapToko": {
+            "type": "object",
+            "properties": {
+                "diskon": {
+                    "type": "number"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "kirim": {
+                    "type": "number"
+                },
+                "nama": {
+                    "type": "string"
+                },
+                "pendapatan": {
+                    "type": "number"
+                },
+                "persentase": {
+                    "type": "number"
+                },
+                "retur": {
+                    "type": "number"
+                }
+            }
+        },
+        "models.Resep": {
+            "type": "object",
+            "properties": {
+                "bahan_detail": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.ResepBahan"
+                    }
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "nama_resep": {
+                    "type": "string"
+                },
+                "target_gramasi": {
+                    "description": "Total adonan matang dr 1 Resep",
+                    "type": "number"
+                }
+            }
+        },
+        "models.ResepBahan": {
+            "type": "object",
+            "properties": {
+                "bahan": {
+                    "$ref": "#/definitions/models.Bahan"
+                },
+                "bahan_id": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "kebutuhan": {
+                    "description": "Butuh berapa gr/ml/pcs",
+                    "type": "number"
+                },
+                "resep_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "models.ResepBahanInput": {
+            "type": "object",
+            "required": [
+                "bahan_id",
+                "kebutuhan"
+            ],
+            "properties": {
+                "bahan_id": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "kebutuhan": {
+                    "type": "number",
+                    "example": 250.5
+                }
+            }
+        },
+        "models.ResepInput": {
+            "type": "object",
+            "required": [
+                "bahan_detail",
+                "nama_resep",
+                "target_gramasi"
+            ],
+            "properties": {
+                "bahan_detail": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.ResepBahanInput"
+                    }
+                },
+                "nama_resep": {
+                    "type": "string",
+                    "example": "Adonan Roti Manis"
+                },
+                "target_gramasi": {
+                    "type": "number",
+                    "example": 2000
+                }
+            }
+        },
+        "models.SisaLayakJual": {
+            "type": "object",
+            "properties": {
+                "barang": {
+                    "$ref": "#/definitions/models.Barang"
+                },
+                "barang_id": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "qty_sisa": {
+                    "type": "integer"
+                },
+                "tanggal": {
+                    "description": "Sisa yang diakui di akhir hari ini",
+                    "type": "string"
+                }
+            }
+        },
+        "models.SnapshotAsetInput": {
+            "type": "object",
+            "required": [
+                "bulan"
+            ],
+            "properties": {
+                "bulan": {
+                    "type": "string",
+                    "example": "2026-05-01"
+                }
+            }
+        },
+        "models.StatusPembelianInput": {
+            "type": "object",
+            "required": [
+                "is_lunas"
+            ],
+            "properties": {
+                "is_lunas": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "models.StockOpname": {
+            "type": "object",
+            "properties": {
+                "bahan": {
+                    "$ref": "#/definitions/models.Bahan"
+                },
+                "bahan_id": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "keterangan": {
+                    "type": "string"
+                },
+                "selisih": {
+                    "description": "Fisik - Sistem",
+                    "type": "number"
+                },
+                "stok_fisik": {
+                    "description": "Input nyata dari timbangan gudang",
+                    "type": "number"
+                },
+                "stok_sistem": {
+                    "description": "Stok di komputer sebelum sidak",
+                    "type": "number"
+                },
+                "tanggal": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.StockOpnameInput": {
+            "type": "object",
+            "required": [
+                "bahan_id",
+                "stok_fisik"
+            ],
+            "properties": {
+                "bahan_id": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "keterangan": {
+                    "type": "string",
+                    "example": "Tumpah 500 gram"
+                },
+                "stok_fisik": {
+                    "type": "number",
+                    "example": 4500.5
+                }
+            }
+        },
+        "models.ToggleKasInput": {
+            "type": "object",
+            "required": [
+                "is_active"
+            ],
+            "properties": {
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "models.Toko": {
+            "type": "object",
+            "properties": {
+                "IsHarian": {
+                    "type": "boolean"
+                },
+                "alamat": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "namaToko": {
+                    "type": "string"
+                },
+                "noTelp": {
+                    "type": "string"
+                },
+                "siklusDua": {
+                    "type": "boolean"
+                },
+                "siklusJumatSelasa": {
+                    "type": "boolean"
+                },
+                "siklusKamisSenin": {
+                    "description": "Flag Siklus",
+                    "type": "boolean"
+                },
+                "siklusSabtuRabu": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "models.TransaksiKas": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "jenis": {
+                    "type": "string"
+                },
+                "kategori": {
+                    "type": "string"
+                },
+                "keterangan": {
+                    "type": "string"
+                },
+                "no_nota_ref": {
+                    "type": "string"
+                },
+                "nominal": {
+                    "type": "number"
+                },
+                "tanggal": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.TutupBukuInput": {
+            "type": "object",
+            "required": [
+                "tanggal"
+            ],
+            "properties": {
+                "tanggal": {
+                    "type": "string",
+                    "example": "2026-05-16"
+                }
+            }
+        },
+        "models.UrutanBahanInput": {
+            "type": "object",
+            "required": [
+                "id",
+                "urutan"
+            ],
+            "properties": {
+                "id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "urutan": {
+                    "type": "integer",
+                    "example": 2
+                }
+            }
+        },
+        "models.UrutanBarangInput": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "urutan": {
+                    "type": "integer",
+                    "example": 2
                 }
             }
         }
