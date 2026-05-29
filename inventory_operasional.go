@@ -24,18 +24,17 @@ func GetPembelianBahan(c *fiber.Ctx) error {
 	start := c.Query("start")
 	end := c.Query("end")
 
-	var beli []models.PembelianBahan
+	var beli []models.NotaPembelian
 
-	query := DB.Preload("Bahan", func(db *gorm.DB) *gorm.DB {
+	// Tarik Induk beserta detail anak dan relasi nama bahannya
+	query := DB.Preload("Details.Bahan", func(db *gorm.DB) *gorm.DB {
 		return db.Unscoped()
 	})
 
-	// Jika frontend mengirim parameter tanggal, filter query-nya
 	if start != "" && end != "" {
 		query = query.Where("tanggal >= ? AND tanggal <= ?", start, end)
 	}
 
-	// Tarik riwayat belanja beserta nama bahannya, urutkan dari yang terbaru
 	if err := query.Order("tanggal desc, id desc").Find(&beli).Error; err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -58,12 +57,15 @@ func GetPembelianBahan(c *fiber.Ctx) error {
 // @Router /api/pembelian [post]
 func CreatePembelianBahan(c *fiber.Ctx) error {
 	var input struct {
-		Tanggal         string  `json:"tanggal"`
-		BahanID         uint    `json:"bahan_id"`
-		Qty             float64 `json:"qty"`
-		HargaBeliSatuan float64 `json:"harga_beli_satuan"`
-		Keterangan      string  `json:"keterangan"`
-		IsLunas         bool    `json:"is_lunas"`
+		Tanggal    string `json:"tanggal"`
+		Keterangan string `json:"keterangan"`
+		IsLunas    bool   `json:"is_lunas"`
+		Details    []struct {
+			BahanID         uint    `json:"bahan_id"`
+			Qty             float64 `json:"qty"`
+			HargaBeliSatuan float64 `json:"harga_beli_satuan"`
+			Subtotal        float64 `json:"subtotal"`
+		} `json:"details"`
 	}
 
 	if err := c.BodyParser(&input); err != nil {
@@ -71,73 +73,72 @@ func CreatePembelianBahan(c *fiber.Ctx) error {
 	}
 
 	tgl, _ := time.Parse("2006-01-02", input.Tanggal)
-	totalBiaya := input.Qty * input.HargaBeliSatuan
-	// adminID := c.Locals("admin_id").(uint)
-
-	// Gunakan Transaction agar jika salah satu gagal, semuanya batal (Aman untuk Akuntansi)
 	tx := DB.Begin()
 
-	// Ambil detail bahan untuk mendapatkan nama & satuan guna keterangan di Kas
-	// var bahan models.Bahan
-	// if err := tx.First(&bahan, input.BahanID).Error; err != nil {
-	// 	tx.Rollback()
-	// 	return c.Status(404).JSON(fiber.Map{"error": "Bahan tidak ditemukan"})
-	// }
+	var grandTotal float64
 
-	// 1. Simpan Riwayat Belanja
-	pembelian := models.PembelianBahan{
-		Tanggal:         tgl,
-		BahanID:         input.BahanID,
-		Qty:             input.Qty,
-		HargaBeliSatuan: input.HargaBeliSatuan,
-		TotalBiaya:      totalBiaya,
-		Keterangan:      input.Keterangan,
-		IsLunas:         input.IsLunas,
+	// 1. Siapkan Induk Nota Pembelian
+	pembelian := models.NotaPembelian{
+		Tanggal:    tgl,
+		Keterangan: input.Keterangan,
+		IsLunas:    input.IsLunas,
 	}
 
+	// 2. Loop rincian bahan belanjaan
+	for _, d := range input.Details {
+		grandTotal += d.Subtotal
+
+		// Masukkan ke detail nota
+		pembelian.Details = append(pembelian.Details, models.NotaPembelianDetail{
+			BahanID:         d.BahanID,
+			Qty:             d.Qty,
+			HargaBeliSatuan: d.HargaBeliSatuan,
+			Subtotal:        d.Subtotal,
+		})
+
+		// 3. Langsung Update Stok & Harga HPP per bahan
+		if err := tx.Model(&models.Bahan{}).Where("id = ?", d.BahanID).Updates(map[string]interface{}{
+			"stok":           gorm.Expr("stok + ?", d.Qty),
+			"harga_saat_ini": d.HargaBeliSatuan,
+		}).Error; err != nil {
+			tx.Rollback()
+			return c.Status(500).JSON(fiber.Map{"error": "Gagal update stok bahan"})
+		}
+	}
+
+	pembelian.TotalBiaya = grandTotal
+
+	// Simpan Nota dan Detailnya ke DB sekaligus
 	if err := tx.Create(&pembelian).Error; err != nil {
 		tx.Rollback()
-		return c.Status(500).JSON(fiber.Map{"error": "Gagal mencatat pembelian: " + err.Error()})
+		return c.Status(500).JSON(fiber.Map{"error": "Gagal mencatat nota pembelian"})
 	}
 
-	// 2. Tambah Stok Bahan & Timpa Harga Saat Ini
-	if err := tx.Model(&models.Bahan{}).Where("id = ?", input.BahanID).Updates(map[string]interface{}{
-		"stok":           gorm.Expr("stok + ?", input.Qty),
-		"harga_saat_ini": input.HargaBeliSatuan,
-	}).Error; err != nil {
-		tx.Rollback()
-		return c.Status(500).JSON(fiber.Map{"error": "Gagal update stok bahan: " + err.Error()})
-	}
-
-	// ==========================================
-	// FULL SYNC KAS: HANYA JIKA LANGSUNG LUNAS
-	// ==========================================
+	// 4. FULL SYNC KAS: HANYA 1 TRANSAKSI UNTUK 1 STRUK (Jika Lunas)
 	var settingKas models.PengaturanSistem
 	DB.Where("key = ?", "ENABLE_KAS_SYNC").First(&settingKas)
 
-	if settingKas.Value == "true" {
-		if input.IsLunas {
-			adminID := c.Locals("admin_id").(uint)
-			var bahan models.Bahan
-			tx.First(&bahan, input.BahanID)
+	if settingKas.Value == "true" && input.IsLunas {
+		adminID := c.Locals("admin_id").(uint)
 
-			ketKas := fmt.Sprintf("Beli Bahan: %s (%v %s) - %s", bahan.NamaBahan, input.Qty, bahan.Satuan, input.Keterangan)
-			if err := tx.Create(&models.TransaksiKas{
-				Tanggal:    time.Now(),
-				Kategori:   "BAHAN",
-				Jenis:      "KELUAR",
-				Nominal:    totalBiaya,
-				Keterangan: ketKas,
-				CreatedBy:  adminID,
-			}).Error; err != nil {
-				tx.Rollback()
-				return c.Status(500).JSON(fiber.Map{"error": "Gagal potong kas"})
-			}
+		ketKas := fmt.Sprintf("Belanja Bahan Baku (Nota #%d) - %d Macam Item. Keterangan: %s", pembelian.ID, len(input.Details), input.Keterangan)
+
+		if err := tx.Create(&models.TransaksiKas{
+			Tanggal:    time.Now(),
+			Kategori:   "BAHAN",
+			Jenis:      "KELUAR",
+			Nominal:    grandTotal,
+			Keterangan: ketKas,
+			NoNotaRef:  fmt.Sprintf("BELI-%d", pembelian.ID),
+			CreatedBy:  adminID,
+		}).Error; err != nil {
+			tx.Rollback()
+			return c.Status(500).JSON(fiber.Map{"error": "Gagal memotong uang kas"})
 		}
 	}
 
 	tx.Commit()
-	return c.JSON(fiber.Map{"message": "Pembelian berhasil dicatat dan stok ditambahkan!"})
+	return c.JSON(fiber.Map{"message": "Struk belanja berhasil dicatat, stok bertambah!"})
 }
 
 // FUNGSI BARU: UBAH STATUS BAYAR (LUNAS <-> HUTANG)
@@ -164,38 +165,32 @@ func UpdateStatusPembelian(c *fiber.Ctx) error {
 	}
 
 	tx := DB.Begin()
-	var p models.PembelianBahan
-	if err := tx.Preload("Bahan").First(&p, id).Error; err != nil {
+	var p models.NotaPembelian
+	if err := tx.First(&p, id).Error; err != nil {
 		tx.Rollback()
-		return c.Status(404).JSON(fiber.Map{"error": "Data pembelian tidak ditemukan"})
+		return c.Status(404).JSON(fiber.Map{"error": "Nota pembelian tidak ditemukan"})
 	}
 
-	// Update status di database
 	if err := tx.Model(&p).Update("is_lunas", input.IsLunas).Error; err != nil {
 		tx.Rollback()
 		return c.Status(500).JSON(fiber.Map{"error": "Gagal update status"})
 	}
 
-	// ==========================================
-	// FULL SYNC KAS: POTONG ATAU KEMBALIKAN KAS
-	// ==========================================
 	var settingKas models.PengaturanSistem
 	DB.Where("key = ?", "ENABLE_KAS_SYNC").First(&settingKas)
 
 	if settingKas.Value == "true" {
-
 		adminID := c.Locals("admin_id").(uint)
-
-		// Kita buat ID referensi unik agar mudah dicari saat mau dihapus
 		noNotaRefBeli := fmt.Sprintf("BELI-%d", p.ID)
 
 		if input.IsLunas {
-			// JIKA JADI LUNAS -> POTONG KAS (KAS KELUAR)
-			ketKas := fmt.Sprintf("Pelunasan Bahan: %s (%v %s) - %s", p.Bahan.NamaBahan, p.Qty, p.Bahan.Satuan, p.Keterangan)
-
-			// Cek dulu apakah sudah ada (biar tidak dobel)
+			ketKas := fmt.Sprintf("Pelunasan Nota Belanja #%d - %s", p.ID, p.Keterangan)
 			var existingKas models.TransaksiKas
-			if err := tx.Where("no_nota_ref = ?", noNotaRefBeli).First(&existingKas).Error; err != nil {
+
+			// Gunakan Find() agar GORM tidak teriak error saat data memang belum ada
+			result := tx.Where("no_nota_ref = ?", noNotaRefBeli).Limit(1).Find(&existingKas)
+
+			if result.RowsAffected == 0 {
 				tx.Create(&models.TransaksiKas{
 					Tanggal:    time.Now(),
 					Kategori:   "BAHAN",
@@ -207,7 +202,6 @@ func UpdateStatusPembelian(c *fiber.Ctx) error {
 				})
 			}
 		} else {
-			// JIKA JADI HUTANG -> TARIK KEMBALI UANGNYA DARI KAS (HAPUS KAS KELUAR TADI)
 			tx.Unscoped().Where("no_nota_ref = ?", noNotaRefBeli).Delete(&models.TransaksiKas{})
 		}
 	}
@@ -232,34 +226,36 @@ func DeletePembelianBahan(c *fiber.Ctx) error {
 	id := c.Params("id")
 	tx := DB.Begin()
 
-	var p models.PembelianBahan
-	if err := tx.First(&p, id).Error; err != nil {
+	var p models.NotaPembelian
+	// Tarik Nota beserta isinya
+	if err := tx.Preload("Details").First(&p, id).Error; err != nil {
 		tx.Rollback()
-		return c.Status(404).JSON(fiber.Map{"error": "Data pembelian tidak ditemukan"})
+		return c.Status(404).JSON(fiber.Map{"error": "Nota pembelian tidak ditemukan"})
 	}
 
-	// 1. Tarik Kembali (Kurangi) Stok dari Master Bahan
-	if err := tx.Model(&models.Bahan{}).Where("id = ?", p.BahanID).
-		Update("stok", gorm.Expr("stok - ?", p.Qty)).Error; err != nil {
-		tx.Rollback()
-		return c.Status(500).JSON(fiber.Map{"error": "Gagal mengembalikan stok"})
+	// 1. Tarik Kembali (Kurangi) Stok semua bahan di dalam nota ini
+	for _, d := range p.Details {
+		if err := tx.Model(&models.Bahan{}).Where("id = ?", d.BahanID).
+			Update("stok", gorm.Expr("stok - ?", d.Qty)).Error; err != nil {
+			tx.Rollback()
+			return c.Status(500).JSON(fiber.Map{"error": "Gagal mengembalikan stok"})
+		}
 	}
 
 	// 2. Tarik Uang Kembali dari Kas (Hanya jika statusnya sudah Lunas)
 	var settingKas models.PengaturanSistem
 	tx.Where("key = ?", "ENABLE_KAS_SYNC").First(&settingKas)
-
 	if settingKas.Value == "true" && p.IsLunas {
-		// Gunakan kode referensi yang sama dengan yang kita buat di UpdateStatusPembelian
 		noNotaRefBeli := fmt.Sprintf("BELI-%d", p.ID)
 		tx.Unscoped().Where("no_nota_ref = ?", noNotaRefBeli).Delete(&models.TransaksiKas{})
 	}
 
-	// 3. Hapus Permanen Riwayat Pembelian Ini
+	// 3. Hapus Permanen Detail (Anak), baru Hapus Induknya
+	tx.Unscoped().Where("nota_pembelian_id = ?", p.ID).Delete(&models.NotaPembelianDetail{})
 	tx.Unscoped().Delete(&p)
 
 	tx.Commit()
-	return c.JSON(fiber.Map{"message": "Pembelian dibatalkan, stok dikurangi, dan kas ditarik kembali!"})
+	return c.JSON(fiber.Map{"message": "Nota dibatalkan, semua stok dikurangi, dan kas ditarik kembali!"})
 }
 
 // PRODUKSI MASAK

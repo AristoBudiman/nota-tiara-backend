@@ -193,7 +193,7 @@ func GetAnalisisAsetLive(c *fiber.Ctx) error {
 
 	// 3. TOTAL HUTANG (Belum lunas dan dibeli sebelum/pada tanggal target)
 	var hutangLive float64
-	DB.Model(&models.PembelianBahan{}).Where("is_lunas = false AND tanggal <= ?", targetDate).Select("COALESCE(SUM(total_biaya), 0)").Row().Scan(&hutangLive)
+	DB.Model(&models.NotaPembelian{}).Where("is_lunas = false AND tanggal <= ?", targetDate).Select("COALESCE(SUM(total_biaya), 0)").Row().Scan(&hutangLive)
 
 	// 4. NILAI PERSEDIAAN (Menggunakan stok saat ini)
 	var inventoryLive float64
@@ -259,7 +259,7 @@ func SimpanSnapshotAset(c *fiber.Ctx) error {
 	DB.Model(&models.NotaPesanan{}).Where("is_lunas = false AND status != 'DIBATALKAN' AND tanggal_kirim <= ?", tglStr).Select("COALESCE(SUM(sisa_tagihan), 0)").Row().Scan(&pPO)
 
 	// 3. HUTANG (Pembelian s/d tanggal snapshot yang belum lunas)
-	DB.Model(&models.PembelianBahan{}).Where("is_lunas = false AND tanggal <= ?", tglStr).Select("COALESCE(SUM(total_biaya), 0)").Row().Scan(&hL)
+	DB.Model(&models.NotaPembelian{}).Where("is_lunas = false AND tanggal <= ?", tglStr).Select("COALESCE(SUM(total_biaya), 0)").Row().Scan(&hL)
 
 	// 4. PERSEDIAAN (Khusus stok gudang selalu mengambil keadaan real-time saat tombol dikunci)
 	DB.Model(&models.Bahan{}).Select("COALESCE(SUM(stok * harga_saat_ini), 0)").Row().Scan(&inv)

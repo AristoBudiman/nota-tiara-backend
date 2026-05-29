@@ -227,16 +227,38 @@ type BarangKemasan struct {
 }
 
 // 7. RIWAYAT BELANJA (PEMBELIAN BAHAN)
-type PembelianBahan struct {
-	ID              uint      `gorm:"primaryKey"`
-	Tanggal         time.Time `gorm:"type:date" json:"tanggal"`
-	BahanID         uint      `gorm:"not null" json:"bahan_id"`
-	Bahan           Bahan     `gorm:"foreignKey:BahanID" json:"bahan"`
-	Qty             float64   `gorm:"not null" json:"qty"`
-	HargaBeliSatuan float64   `gorm:"not null" json:"harga_beli_satuan"` // Histori harga pada hari H
-	TotalBiaya      float64   `gorm:"not null" json:"total_biaya"`
-	Keterangan      string    `json:"keterangan"`
-	IsLunas         bool      `json:"is_lunas"`
+// type PembelianBahan struct {
+// 	ID              uint      `gorm:"primaryKey"`
+// 	Tanggal         time.Time `gorm:"type:date" json:"tanggal"`
+// 	BahanID         uint      `gorm:"not null" json:"bahan_id"`
+// 	Bahan           Bahan     `gorm:"foreignKey:BahanID" json:"bahan"`
+// 	Qty             float64   `gorm:"not null" json:"qty"`
+// 	HargaBeliSatuan float64   `gorm:"not null" json:"harga_beli_satuan"` // Histori harga pada hari H
+// 	TotalBiaya      float64   `gorm:"not null" json:"total_biaya"`
+// 	Keterangan      string    `json:"keterangan"`
+// 	IsLunas         bool      `json:"is_lunas"`
+// }
+
+// 7. RIWAYAT BELANJA GABUNGAN (NOTA PEMBELIAN)
+type NotaPembelian struct {
+	ID         uint      `gorm:"primaryKey"`
+	Tanggal    time.Time `gorm:"type:date" json:"tanggal"`
+	TotalBiaya float64   `gorm:"not null" json:"total_biaya"` // Grand Total 1 Struk
+	Keterangan string    `json:"keterangan"`
+	IsLunas    bool      `json:"is_lunas"`
+
+	Details []NotaPembelianDetail `gorm:"foreignKey:NotaPembelianID" json:"details"`
+}
+
+// 7.1. RINCIAN BARANG YANG DIBELI DALAM SATU NOTA
+type NotaPembelianDetail struct {
+	ID              uint    `gorm:"primaryKey"`
+	NotaPembelianID uint    `gorm:"not null" json:"nota_pembelian_id"`
+	BahanID         uint    `gorm:"not null" json:"bahan_id"`
+	Bahan           Bahan   `gorm:"foreignKey:BahanID" json:"bahan"`
+	Qty             float64 `gorm:"not null" json:"qty"`
+	HargaBeliSatuan float64 `gorm:"not null" json:"harga_beli_satuan"`
+	Subtotal        float64 `gorm:"not null" json:"subtotal"`
 }
 
 // 8. MASTER RESEP
