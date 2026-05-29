@@ -433,9 +433,22 @@ func PulihkanNota(c *fiber.Ctx) error {
 // @Router /notas [get]
 func GetNotas(c *fiber.Ctx) error {
 	var notas []models.Nota
-	if err := DB.Preload("Toko").Preload("Details").Preload("Details.Barang").Order("id desc").Find(&notas).Error; err != nil {
+
+	// Tangkap parameter tanggal dari Vue
+	startDate := c.Query("start_date")
+	endDate := c.Query("end_date")
+
+	// Siapkan pondasi query
+	query := DB.Preload("Toko").Preload("Details").Preload("Details.Barang").Order("id desc")
+
+	// Jika ada filter tanggal, tambahkan klausa WHERE
+	if startDate != "" && endDate != "" {
+		query = query.Where("tanggal_kirim >= ? AND tanggal_kirim <= ?", startDate+" 00:00:00", endDate+" 23:59:59")
+	}
+
+	if err := query.Find(&notas).Error; err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	} // Gunakan "id desc" agar nota yang baru dibuat muncul paling atas
+	}
 	return c.JSON(notas)
 }
 

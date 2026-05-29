@@ -531,8 +531,17 @@ func PulihkanPesanan(c *fiber.Ctx) error {
 // @Router /api/pesanan/riwayat [get]
 func GetRiwayatPesanan(c *fiber.Ctx) error {
 	var pesanan []models.NotaPesanan
-	// Urutkan dari yang terbaru, hapus Where("riwayat") yang error
-	if err := DB.Preload("Toko").Preload("Details").Order("id desc").Find(&pesanan).Error; err != nil {
+
+	startDate := c.Query("start_date")
+	endDate := c.Query("end_date")
+
+	query := DB.Preload("Toko").Preload("Details").Order("id desc")
+
+	if startDate != "" && endDate != "" {
+		query = query.Where("tanggal_kirim >= ? AND tanggal_kirim <= ?", startDate+" 00:00:00", endDate+" 23:59:59")
+	}
+
+	if err := query.Find(&pesanan).Error; err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.JSON(pesanan)
