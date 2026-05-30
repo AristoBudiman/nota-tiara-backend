@@ -69,12 +69,14 @@ func GetNextNotaNumber(c *fiber.Ctx) error {
 // @Router /notas [post]
 func CreateNota(c *fiber.Ctx) error {
 	var input struct {
-		NoNota       string `json:"no_nota"`
-		TokoID       uint   `json:"toko_id"`
-		TanggalKirim string `json:"tanggal_kirim"`
-		AssignedTo   uint   `json:"assigned_to"`
-		Status       string `json:"status"`
-		IsLunas      bool   `json:"is_lunas"`
+		NoNota       string  `json:"no_nota"`
+		TokoID       uint    `json:"toko_id"`
+		TanggalKirim string  `json:"tanggal_kirim"`
+		AssignedTo   uint    `json:"assigned_to"`
+		Status       string  `json:"status"`
+		IsLunas      bool    `json:"is_lunas"`
+		TotalDiskon  float64 `json:"total_diskon"`
+		TotalVoucher float64 `json:"total_voucher"`
 		Details      []struct {
 			BarangID    uint `json:"barang_id"`
 			BanyakKirim int  `json:"banyak_kirim"`
@@ -146,6 +148,8 @@ func CreateNota(c *fiber.Ctx) error {
 		CreatedBy:        adminID,
 		AssignedTo:       assignedTo,
 		IsLunas:          input.IsLunas,
+		TotalDiskon:      input.TotalDiskon,
+		TotalVoucher:     input.TotalVoucher,
 	}
 
 	var totalKirim float64
@@ -166,7 +170,7 @@ func CreateNota(c *fiber.Ctx) error {
 	}
 
 	nota.JumlahKirim = totalKirim
-	nota.TotalBayar = totalKirim
+	nota.TotalBayar = totalKirim - input.TotalDiskon - input.TotalVoucher
 
 	if err := DB.Create(&nota).Error; err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
