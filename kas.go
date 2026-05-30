@@ -187,7 +187,7 @@ func GetAnalisisAsetLive(c *fiber.Ctx) error {
 
 	// 2. TOTAL PIUTANG (Masih hutang dan dibuat sebelum/pada tanggal target)
 	var piutangReguler, piutangPO float64
-	DB.Model(&models.Nota{}).Where("is_lunas = false AND tanggal_kirim <= ?", targetDate).Select("COALESCE(SUM(total_bayar), 0)").Row().Scan(&piutangReguler)
+	DB.Model(&models.Nota{}).Where("is_lunas = false AND status != 'DIBATALKAN' AND tanggal_kirim <= ?", targetDate).Select("COALESCE(SUM(total_bayar), 0)").Row().Scan(&piutangReguler)
 	DB.Model(&models.NotaPesanan{}).Where("is_lunas = false AND status != 'DIBATALKAN' AND tanggal_kirim <= ?", targetDate).Select("COALESCE(SUM(sisa_tagihan), 0)").Row().Scan(&piutangPO)
 	piutangLive := piutangReguler + piutangPO
 
