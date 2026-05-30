@@ -213,6 +213,8 @@ func GetAnalisisAsetLive(c *fiber.Ctx) error {
 		"live": fiber.Map{
 			"total_kas":        kasLive, // Hasil (Masuk - Keluar) s/d targetDate
 			"total_piutang":    piutangLive,
+			"piutang_reguler":  piutangReguler, // <-- TAMBAHKAN INI
+			"piutang_pesanan":  piutangPO,
 			"total_persediaan": inventoryLive,
 			"total_hutang":     hutangLive,
 			"aset_bersih":      kasLive + piutangLive + inventoryLive - hutangLive,
