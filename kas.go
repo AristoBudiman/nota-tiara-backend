@@ -255,7 +255,7 @@ func SimpanSnapshotAset(c *fiber.Ctx) error {
 	DB.Model(&models.TransaksiKas{}).Where("jenis = 'KELUAR' AND tanggal <= ?", tglStr).Select("COALESCE(SUM(nominal), 0)").Row().Scan(&kK)
 
 	// 2. PIUTANG (Nota/PO yang dibuat s/d tanggal snapshot dan belum lunas)
-	DB.Model(&models.Nota{}).Where("is_lunas = false AND tanggal_kirim <= ?", tglStr).Select("COALESCE(SUM(total_bayar), 0)").Row().Scan(&pR)
+	DB.Model(&models.Nota{}).Where("is_lunas = false AND status != 'DIBATALKAN' AND tanggal_kirim <= ?", tglStr).Select("COALESCE(SUM(total_bayar), 0)").Row().Scan(&pR)
 	DB.Model(&models.NotaPesanan{}).Where("is_lunas = false AND status != 'DIBATALKAN' AND tanggal_kirim <= ?", tglStr).Select("COALESCE(SUM(sisa_tagihan), 0)").Row().Scan(&pPO)
 
 	// 3. HUTANG (Pembelian s/d tanggal snapshot yang belum lunas)
