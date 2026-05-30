@@ -241,24 +241,26 @@ type BarangKemasan struct {
 
 // 7. RIWAYAT BELANJA GABUNGAN (NOTA PEMBELIAN)
 type NotaPembelian struct {
-	ID         uint      `gorm:"primaryKey"`
-	Tanggal    time.Time `gorm:"type:date" json:"tanggal"`
-	TotalBiaya float64   `gorm:"not null" json:"total_biaya"` // Grand Total 1 Struk
-	Keterangan string    `json:"keterangan"`
-	IsLunas    bool      `json:"is_lunas"`
+	ID         uint           `gorm:"primaryKey"`
+	DeletedAt  gorm.DeletedAt `gorm:"index" json:"-"`
+	Tanggal    time.Time      `gorm:"type:date" json:"tanggal"`
+	TotalBiaya float64        `gorm:"not null" json:"total_biaya"` // Grand Total 1 Struk
+	Keterangan string         `json:"keterangan"`
+	IsLunas    bool           `json:"is_lunas"`
 
 	Details []NotaPembelianDetail `gorm:"foreignKey:NotaPembelianID" json:"details"`
 }
 
 // 7.1. RINCIAN BARANG YANG DIBELI DALAM SATU NOTA
 type NotaPembelianDetail struct {
-	ID              uint    `gorm:"primaryKey"`
-	NotaPembelianID uint    `gorm:"not null" json:"nota_pembelian_id"`
-	BahanID         uint    `gorm:"not null" json:"bahan_id"`
-	Bahan           Bahan   `gorm:"foreignKey:BahanID" json:"bahan"`
-	Qty             float64 `gorm:"not null" json:"qty"`
-	HargaBeliSatuan float64 `gorm:"not null" json:"harga_beli_satuan"`
-	Subtotal        float64 `gorm:"not null" json:"subtotal"`
+	ID              uint           `gorm:"primaryKey"`
+	DeletedAt       gorm.DeletedAt `gorm:"index" json:"-"`
+	NotaPembelianID uint           `gorm:"not null" json:"nota_pembelian_id"`
+	BahanID         uint           `gorm:"not null" json:"bahan_id"`
+	Bahan           Bahan          `gorm:"foreignKey:BahanID" json:"bahan"`
+	Qty             float64        `gorm:"not null" json:"qty"`
+	HargaBeliSatuan float64        `gorm:"not null" json:"harga_beli_satuan"`
+	Subtotal        float64        `gorm:"not null" json:"subtotal"`
 }
 
 // 8. MASTER RESEP

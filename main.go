@@ -320,6 +320,7 @@ func main() {
 	api.Post("/pembelian", RequireRole(RoleSuperadmin), CreatePembelianBahan)
 	api.Put("/pembelian/:id/status", RequireRole(RoleSuperadmin), UpdateStatusPembelian)
 	api.Delete("/pembelian/:id", RequireRole(RoleSuperadmin), DeletePembelianBahan)
+	api.Put("/pembelian/:id/pulihkan", RequireRole(RoleSuperadmin), RestorePembelianBahan)
 
 	// RESEP
 	api.Get("/resep", RequireRole(RoleSuperadmin), GetResep)

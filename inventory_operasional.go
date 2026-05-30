@@ -23,6 +23,7 @@ import (
 func GetPembelianBahan(c *fiber.Ctx) error {
 	start := c.Query("start")
 	end := c.Query("end")
+	status := c.Query("status")
 
 	var beli []models.NotaPembelian
 
@@ -33,6 +34,10 @@ func GetPembelianBahan(c *fiber.Ctx) error {
 
 	if start != "" && end != "" {
 		query = query.Where("tanggal >= ? AND tanggal <= ?", start, end)
+	}
+
+	if status == "sampah" {
+		query = query.Unscoped().Where("deleted_at IS NOT NULL")
 	}
 
 	if err := query.Order("tanggal desc, id desc").Find(&beli).Error; err != nil {
@@ -250,12 +255,55 @@ func DeletePembelianBahan(c *fiber.Ctx) error {
 		tx.Unscoped().Where("no_nota_ref = ?", noNotaRefBeli).Delete(&models.TransaksiKas{})
 	}
 
-	// 3. Hapus Permanen Detail (Anak), baru Hapus Induknya
-	tx.Unscoped().Where("nota_pembelian_id = ?", p.ID).Delete(&models.NotaPembelianDetail{})
-	tx.Unscoped().Delete(&p)
+	// 3. Hapus Sementara (Soft Delete) Detail (Anak), baru Hapus Induknya
+	tx.Where("nota_pembelian_id = ?", p.ID).Delete(&models.NotaPembelianDetail{})
+	tx.Delete(&p)
 
 	tx.Commit()
 	return c.JSON(fiber.Map{"message": "Nota dibatalkan, semua stok dikurangi, dan kas ditarik kembali!"})
+}
+
+// RestorePembelianBahan mengembalikan nota yang di soft-delete
+func RestorePembelianBahan(c *fiber.Ctx) error {
+	id := c.Params("id")
+	tx := DB.Begin()
+
+	var p models.NotaPembelian
+	// Cari di tong sampah
+	if err := tx.Unscoped().Preload("Details").First(&p, id).Error; err != nil {
+		tx.Rollback()
+		return c.Status(404).JSON(fiber.Map{"error": "Nota tidak ditemukan di tong sampah"})
+	}
+
+	// 1. Hilangkan status "terhapus" (Kembalikan ke alam nyata)
+	tx.Unscoped().Model(&p).Update("deleted_at", nil)
+	tx.Unscoped().Model(&models.NotaPembelianDetail{}).Where("nota_pembelian_id = ?", p.ID).Update("deleted_at", nil)
+
+	// 2. Kembalikan / Tambah Stok Gudang
+	for _, d := range p.Details {
+		tx.Model(&models.Bahan{}).Where("id = ?", d.BahanID).Update("stok", gorm.Expr("stok + ?", d.Qty))
+	}
+
+	// 3. Potong Kembali Kas (Jika statusnya Lunas)
+	var settingKas models.PengaturanSistem
+	tx.Where("key = ?", "ENABLE_KAS_SYNC").First(&settingKas)
+	if settingKas.Value == "true" && p.IsLunas {
+		adminID := c.Locals("admin_id").(uint)
+		ketKas := fmt.Sprintf("Pemulihan Belanja Bahan Baku (Nota #%d) - %s", p.ID, p.Keterangan)
+
+		tx.Create(&models.TransaksiKas{
+			Tanggal:    p.Tanggal,
+			Kategori:   "BAHAN",
+			Jenis:      "KELUAR",
+			Nominal:    p.TotalBiaya,
+			Keterangan: ketKas,
+			NoNotaRef:  fmt.Sprintf("BELI-%d", p.ID),
+			CreatedBy:  adminID,
+		})
+	}
+
+	tx.Commit()
+	return c.JSON(fiber.Map{"message": "Nota berhasil dipulihkan, stok dan kas terpotong kembali!"})
 }
 
 // PRODUKSI MASAK
