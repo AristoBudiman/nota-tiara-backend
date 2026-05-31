@@ -169,7 +169,7 @@ func GetAnalisisAsetLive(c *fiber.Ctx) error {
 	startDatePrive := c.Query("start_date") // Tanggal Mulai Hitung Prive
 
 	if targetDate == "" {
-		targetDate = time.Now().Format("2006-01-02")
+		targetDate = wib().Format("2006-01-02")
 	}
 
 	tglTarget, _ := time.Parse("2006-01-02", targetDate)

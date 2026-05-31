@@ -321,7 +321,7 @@ func RestorePembelianBahan(c *fiber.Ctx) error {
 func GetProduksiMasak(c *fiber.Ctx) error {
 	tanggal := c.Query("tanggal")
 	if tanggal == "" {
-		tanggal = time.Now().Format("2006-01-02")
+		tanggal = wib().Format("2006-01-02")
 	}
 	var masak []models.ProduksiMasak
 	DB.Preload("Resep", func(db *gorm.DB) *gorm.DB {
@@ -444,7 +444,7 @@ func DeleteProduksiMasak(c *fiber.Ctx) error {
 func GetProduksiMatang(c *fiber.Ctx) error {
 	tanggal := c.Query("tanggal")
 	if tanggal == "" {
-		tanggal = time.Now().Format("2006-01-02")
+		tanggal = wib().Format("2006-01-02")
 	}
 	var matang []models.ProduksiMatang
 	DB.Preload("Barang", func(db *gorm.DB) *gorm.DB {
@@ -594,7 +594,7 @@ func DeleteProduksiMatang(c *fiber.Ctx) error {
 func GetBarangRusak(c *fiber.Ctx) error {
 	tanggal := c.Query("tanggal")
 	if tanggal == "" {
-		tanggal = time.Now().Format("2006-01-02")
+		tanggal = wib().Format("2006-01-02")
 	}
 	var rusak []models.BarangRusak
 	DB.Preload("Barang", func(db *gorm.DB) *gorm.DB {
