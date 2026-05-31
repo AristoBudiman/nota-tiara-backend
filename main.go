@@ -93,6 +93,9 @@ func connectDB() {
 		&models.PengaturanSistem{},
 		&models.AsetSnapshot{},
 		&models.NotaPesananDetailKemasan{},
+		&models.ResepKomposit{},
+		&models.ResepKompositDetail{},
+		&models.BarangKomposit{},
 	)
 	log.Println("Database & Tabel Berhasil Disiapkan! 🏗️")
 
@@ -327,6 +330,12 @@ func main() {
 	api.Post("/resep", RequireRole(RoleSuperadmin), CreateResep)
 	api.Put("/resep/:id", RequireRole(RoleSuperadmin), UpdateResep)
 	api.Delete("/resep/:id", RequireRole(RoleSuperadmin), DeleteResep)
+
+	// KOMPOSIT
+	api.Get("/komposit", RequireRole(RoleSuperadmin), GetKomposit)
+	api.Post("/komposit", RequireRole(RoleSuperadmin), CreateKomposit)
+	api.Put("/komposit/:id", RequireRole(RoleSuperadmin), UpdateKomposit)
+	api.Delete("/komposit/:id", RequireRole(RoleSuperadmin), DeleteKomposit)
 
 	// PRODUKSI HARIAN
 	api.Get("/produksi/masak", RequireRole(RoleSuperadmin), GetProduksiMasak)

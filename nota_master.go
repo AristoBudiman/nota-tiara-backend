@@ -43,7 +43,7 @@ func GetProfilTiara(c *fiber.Ctx) error {
 // @Router /api/barangs [get]
 func GetBarangs(c *fiber.Ctx) error {
 	var barangs []models.Barang
-	if err := DB.Preload("Resep").Preload("Kemasan.Bahan").Order("urutan asc, id asc").Find(&barangs).Error; err != nil {
+	if err := DB.Preload("Resep").Preload("Kemasan.Bahan").Preload("Komposit.ResepKomposit.Details").Order("urutan asc, id asc").Find(&barangs).Error; err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.JSON(barangs)
@@ -102,6 +102,10 @@ func CreateBarang(c *fiber.Ctx) error {
 			BahanID   uint    `json:"bahan_id"`
 			Kebutuhan float64 `json:"kebutuhan"`
 		} `json:"kemasan_detail"`
+		KompositDetail []struct {
+			ResepKompositID uint    `json:"resep_komposit_id"`
+			Kebutuhan       float64 `json:"kebutuhan"`
+		} `json:"komposit_detail"`
 	}
 
 	if err := c.BodyParser(&input); err != nil {
@@ -126,6 +130,19 @@ func CreateBarang(c *fiber.Ctx) error {
 			BahanID:   k.BahanID,
 			Kebutuhan: k.Kebutuhan,
 		})
+	}
+
+	// LOGIKA INSERT KOMPOSIT (Taruh di CreateBarang & UpdateBarang)
+	var newKomposit []models.BarangKomposit
+	for _, k := range input.KompositDetail {
+		newKomposit = append(newKomposit, models.BarangKomposit{
+			BarangID:        barang.ID, // Gunakan uint(parsedID) untuk fungsi UpdateBarang
+			ResepKompositID: k.ResepKompositID,
+			Kebutuhan:       k.Kebutuhan,
+		})
+	}
+	if len(newKomposit) > 0 {
+		DB.Create(&newKomposit)
 	}
 
 	if err := DB.Create(&barang).Error; err != nil {
@@ -162,6 +179,10 @@ func UpdateBarang(c *fiber.Ctx) error {
 			BahanID   uint    `json:"bahan_id"`
 			Kebutuhan float64 `json:"kebutuhan"`
 		} `json:"kemasan_detail"`
+		KompositDetail []struct {
+			ResepKompositID uint    `json:"resep_komposit_id"`
+			Kebutuhan       float64 `json:"kebutuhan"`
+		} `json:"komposit_detail"`
 	}
 
 	if err := c.BodyParser(&input); err != nil {
@@ -174,6 +195,7 @@ func UpdateBarang(c *fiber.Ctx) error {
 	}
 
 	DB.Where("barang_id = ?", id).Delete(&models.BarangKemasan{})
+	DB.Where("barang_id = ?", id).Delete(&models.BarangKomposit{})
 
 	var newKemasan []models.BarangKemasan
 	parsedID, _ := strconv.Atoi(id)
@@ -186,6 +208,19 @@ func UpdateBarang(c *fiber.Ctx) error {
 	}
 	if len(newKemasan) > 0 {
 		DB.Create(&newKemasan)
+	}
+
+	// LOGIKA INSERT KOMPOSIT (Taruh di CreateBarang & UpdateBarang)
+	var newKomposit []models.BarangKomposit
+	for _, k := range input.KompositDetail {
+		newKomposit = append(newKomposit, models.BarangKomposit{
+			BarangID:        barang.ID, // Gunakan uint(parsedID) untuk fungsi UpdateBarang
+			ResepKompositID: k.ResepKompositID,
+			Kebutuhan:       k.Kebutuhan,
+		})
+	}
+	if len(newKomposit) > 0 {
+		DB.Create(&newKomposit)
 	}
 
 	DB.Model(&barang).Updates(map[string]interface{}{
@@ -337,17 +372,20 @@ func GetTrash(c *fiber.Ctx) error {
 	var barangTerhapus []models.Barang
 	var bahanTerhapus []models.Bahan
 	var resepTerhapus []models.Resep
+	var kompositTerhapus []models.ResepKomposit
 
 	DB.Unscoped().Where("deleted_at IS NOT NULL").Find(&tokoTerhapus)
 	DB.Unscoped().Where("deleted_at IS NOT NULL").Find(&barangTerhapus)
 	DB.Unscoped().Where("deleted_at IS NOT NULL").Find(&bahanTerhapus)
 	DB.Unscoped().Where("deleted_at IS NOT NULL").Find(&resepTerhapus)
+	DB.Unscoped().Where("deleted_at IS NOT NULL").Find(&kompositTerhapus)
 
 	return c.JSON(fiber.Map{
-		"tokos":   tokoTerhapus,
-		"barangs": barangTerhapus,
-		"bahans":  bahanTerhapus,
-		"reseps":  resepTerhapus,
+		"tokos":     tokoTerhapus,
+		"barangs":   barangTerhapus,
+		"bahans":    bahanTerhapus,
+		"reseps":    resepTerhapus,
+		"komposits": kompositTerhapus,
 	})
 }
 
@@ -376,6 +414,8 @@ func RestoreData(c *fiber.Ctx) error {
 		DB.Unscoped().Model(&models.Bahan{}).Where("id = ?", id).Update("deleted_at", nil)
 	case "resep":
 		DB.Unscoped().Model(&models.Resep{}).Where("id = ?", id).Update("deleted_at", nil)
+	case "komposit":
+		DB.Unscoped().Model(&models.ResepKomposit{}).Where("id = ?", id).Update("deleted_at", nil)
 	default:
 		return c.Status(400).JSON(fiber.Map{"error": "Jenis data tidak valid"})
 	}

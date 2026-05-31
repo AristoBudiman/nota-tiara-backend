@@ -53,7 +53,8 @@ type Barang struct {
 	KebutuhanAdonan float64 `gorm:"default:0" json:"kebutuhan_adonan"`     // Berapa gram / fraksi per 1 roti
 	MasaSimpan      int     `gorm:"default:2" json:"masa_simpan"`          // Default 2 hari
 
-	Kemasan []BarangKemasan `gorm:"foreignKey:BarangID" json:"kemasan_detail"`
+	Kemasan  []BarangKemasan  `gorm:"foreignKey:BarangID" json:"kemasan_detail"`
+	Komposit []BarangKomposit `gorm:"foreignKey:BarangID" json:"komposit_detail"`
 }
 
 // 4. HEADER NOTA
@@ -371,4 +372,29 @@ type AsetSnapshot struct {
 	TotalHutang     float64   `json:"total_hutang"`
 	AsetBersih      float64   `json:"aset_bersih"`
 	CreatedAt       time.Time `json:"created_at"`
+}
+
+// 15. MASTER RESEP KOMPOSIT (Sub-Assembly / Pre-Mix)
+type ResepKomposit struct {
+	ID           uint                  `gorm:"primaryKey" json:"id"`
+	DeletedAt    gorm.DeletedAt        `gorm:"index" json:"-"`
+	NamaKomposit string                `gorm:"not null" json:"nama_komposit"`
+	Details      []ResepKompositDetail `gorm:"foreignKey:ResepKompositID" json:"details"`
+}
+
+type ResepKompositDetail struct {
+	ID              uint    `gorm:"primaryKey" json:"id"`
+	ResepKompositID uint    `gorm:"not null" json:"resep_komposit_id"`
+	BahanID         uint    `gorm:"not null" json:"bahan_id"`
+	Bahan           Bahan   `gorm:"foreignKey:BahanID" json:"bahan"`
+	Rasio           float64 `gorm:"not null" json:"rasio"` // Misal: 4, 2, 7
+}
+
+// JEMBATAN MANY-TO-MANY (Satu Barang bisa pakai banyak komposit)
+type BarangKomposit struct {
+	ID              uint          `gorm:"primaryKey" json:"id"`
+	BarangID        uint          `gorm:"not null" json:"barang_id"`
+	ResepKompositID uint          `gorm:"not null" json:"resep_komposit_id"`
+	ResepKomposit   ResepKomposit `gorm:"foreignKey:ResepKompositID" json:"resep_komposit"`
+	Kebutuhan       float64       `gorm:"not null" json:"kebutuhan"` // Total gramasi komposit per 1 pcs barang
 }

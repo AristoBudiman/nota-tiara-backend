@@ -487,12 +487,35 @@ func CreateProduksiMatang(c *fiber.Ctx) error {
 		tx.Create(&matang)
 	}
 
-	// === BARU: POTONG STOK KEMASAN ===
+	// === BARU: POTONG STOK KEMASAN & KOMPOSIT ===
 	var barang models.Barang
-	if err := tx.Preload("Kemasan").First(&barang, input.BarangID).Error; err == nil {
+	// WAJIB Preload Kemasan dan Komposit beserta detail rasionya
+	if err := tx.Preload("Kemasan").Preload("Komposit.ResepKomposit.Details").First(&barang, input.BarangID).Error; err == nil {
+
+		// 1. Potong Kemasan (Logika Lama)
 		for _, k := range barang.Kemasan {
 			pengurangan := k.Kebutuhan * float64(input.QtyMatang)
 			tx.Model(&models.Bahan{}).Where("id = ?", k.BahanID).Update("stok", gorm.Expr("stok - ?", pengurangan))
+		}
+
+		// 2. Potong Resep Komposit (Logika Potong Pecahan Rasio)
+		for _, komp := range barang.Komposit {
+			totalKebutuhanKomposit := komp.Kebutuhan * float64(input.QtyMatang) // Misal: 40gr * 100pcs = 4000gr
+
+			// Hitung total rasio pembagi (misal 4 + 2 + 7 = 13)
+			var totalRasio float64
+			for _, detail := range komp.ResepKomposit.Details {
+				totalRasio += detail.Rasio
+			}
+
+			// Eksekusi potong per bahan dasar butter/coklat
+			if totalRasio > 0 {
+				for _, detail := range komp.ResepKomposit.Details {
+					// RUMUS: (Rasio Bahan / Total Rasio) * Total Kebutuhan Gramasi Matang
+					gramasiPotong := (detail.Rasio / totalRasio) * totalKebutuhanKomposit
+					tx.Model(&models.Bahan{}).Where("id = ?", detail.BahanID).Update("stok", gorm.Expr("stok - ?", gramasiPotong))
+				}
+			}
 		}
 	}
 
@@ -521,13 +544,31 @@ func DeleteProduksiMatang(c *fiber.Ctx) error {
 		return c.Status(404).JSON(fiber.Map{"error": "Data matang tidak ditemukan"})
 	}
 
-	// 2. Tarik data barang beserta detail kemasannya
+	// 2. Tarik data barang beserta detail kemasan & kompositnya
 	var barang models.Barang
-	if err := tx.Preload("Kemasan").First(&barang, matang.BarangID).Error; err == nil {
-		// 3. Kembalikan (Refund) stok kemasan ke gudang
+	if err := tx.Preload("Kemasan").Preload("Komposit.ResepKomposit.Details").First(&barang, matang.BarangID).Error; err == nil {
+
+		// 3. Kembalikan (Refund) stok kemasan
 		for _, k := range barang.Kemasan {
 			pengembalian := k.Kebutuhan * float64(matang.QtyMatang)
 			tx.Model(&models.Bahan{}).Where("id = ?", k.BahanID).Update("stok", gorm.Expr("stok + ?", pengembalian))
+		}
+
+		// 4. Kembalikan (Refund) stok Resep Komposit
+		for _, komp := range barang.Komposit {
+			totalKebutuhanKomposit := komp.Kebutuhan * float64(matang.QtyMatang)
+
+			var totalRasio float64
+			for _, detail := range komp.ResepKomposit.Details {
+				totalRasio += detail.Rasio
+			}
+
+			if totalRasio > 0 {
+				for _, detail := range komp.ResepKomposit.Details {
+					gramasiKembali := (detail.Rasio / totalRasio) * totalKebutuhanKomposit
+					tx.Model(&models.Bahan{}).Where("id = ?", detail.BahanID).Update("stok", gorm.Expr("stok + ?", gramasiKembali))
+				}
+			}
 		}
 	}
 

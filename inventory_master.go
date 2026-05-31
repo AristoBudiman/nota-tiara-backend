@@ -263,3 +263,65 @@ func DeleteResep(c *fiber.Ctx) error {
 	}
 	return c.JSON(fiber.Map{"message": "Resep berhasil dihapus"})
 }
+
+// ==========================================
+// MASTER RESEP KOMPOSIT
+// ==========================================
+func GetKomposit(c *fiber.Ctx) error {
+	var komposit []models.ResepKomposit
+	if err := DB.Preload("Details.Bahan").Find(&komposit).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(komposit)
+}
+
+func CreateKomposit(c *fiber.Ctx) error {
+	var input struct {
+		NamaKomposit string `json:"nama_komposit"`
+		Details      []struct {
+			BahanID uint    `json:"bahan_id"`
+			Rasio   float64 `json:"rasio"`
+		} `json:"details"`
+	}
+	if err := c.BodyParser(&input); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Format salah"})
+	}
+	komposit := models.ResepKomposit{NamaKomposit: input.NamaKomposit}
+	for _, d := range input.Details {
+		komposit.Details = append(komposit.Details, models.ResepKompositDetail{BahanID: d.BahanID, Rasio: d.Rasio})
+	}
+	if err := DB.Create(&komposit).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"message": "Komposit berhasil dibuat!"})
+}
+
+func UpdateKomposit(c *fiber.Ctx) error {
+	id := c.Params("id")
+	var input struct {
+		NamaKomposit string `json:"nama_komposit"`
+		Details      []struct {
+			BahanID uint    `json:"bahan_id"`
+			Rasio   float64 `json:"rasio"`
+		} `json:"details"`
+	}
+	if err := c.BodyParser(&input); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Format salah"})
+	}
+	DB.Where("resep_komposit_id = ?", id).Delete(&models.ResepKompositDetail{})
+	var newDetails []models.ResepKompositDetail
+	parsedID, _ := strconv.Atoi(id)
+	for _, d := range input.Details {
+		newDetails = append(newDetails, models.ResepKompositDetail{ResepKompositID: uint(parsedID), BahanID: d.BahanID, Rasio: d.Rasio})
+	}
+	DB.Create(&newDetails)
+	DB.Model(&models.ResepKomposit{}).Where("id = ?", id).Update("nama_komposit", input.NamaKomposit)
+	return c.JSON(fiber.Map{"message": "Diupdate!"})
+}
+
+func DeleteKomposit(c *fiber.Ctx) error {
+	id := c.Params("id")
+	// Karena struct ResepKomposit punya DeletedAt, ini otomatis SOFT DELETE!
+	DB.Delete(&models.ResepKomposit{}, id)
+	return c.JSON(fiber.Map{"message": "Dihapus sementara"})
+}
