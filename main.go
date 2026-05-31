@@ -9,6 +9,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/gofiber/swagger"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/joho/godotenv"
@@ -31,7 +32,7 @@ const (
 
 // HELPER WIB
 func wib() time.Time {
-	loc, _ := time.LoadLocation("Asia/Jakarta")
+	loc := time.FixedZone("WIB", 7*3600)
 	return time.Now().In(loc)
 }
 
@@ -283,8 +284,13 @@ func main() {
 
 	app := fiber.New()
 
+	// Tambahkan recover agar jika ada panic, server tidak crash dan tetap mengirimkan header CORS
+	app.Use(recover.New())
+
 	app.Use(cors.New(cors.Config{
 		AllowOrigins: "http://localhost:5173, http://localhost:5174, http://localhost:5175, https://nota-tiara-frontend.vercel.app, https://tiara-inventory.vercel.app, https://kas-tiara.vercel.app",
+		AllowHeaders: "Origin, Content-Type, Accept, Authorization",
+		AllowMethods: "GET, POST, HEAD, PUT, DELETE, PATCH, OPTIONS",
 	}))
 
 	app.Get("/", func(c *fiber.Ctx) error {
