@@ -104,6 +104,10 @@ func CreateNotaPesanan(c *fiber.Ctx) error {
 				BahanID   uint    `json:"bahan_id"`
 				Kebutuhan float64 `json:"kebutuhan"`
 			} `json:"kemasan_detail"`
+			KompositDetail   []struct {
+				ResepKompositID   uint    `json:"resep_komposit_id"`
+				Kebutuhan float64 `json:"kebutuhan"`
+			} `json:"komposit_detail"`
 		} `json:"details"`
 	}
 
@@ -149,6 +153,15 @@ func CreateNotaPesanan(c *fiber.Ctx) error {
 			})
 		}
 
+		// --- LOGIKA KOMPOSIT BARU ---
+		var kompositArr []models.NotaPesananDetailKomposit
+		for _, k := range d.KompositDetail {
+			kompositArr = append(kompositArr, models.NotaPesananDetailKomposit{
+				ResepKompositID: k.ResepKompositID,
+				Kebutuhan:       k.Kebutuhan,
+			})
+		}
+
 		pesanan.Details = append(pesanan.Details, models.NotaPesananDetail{
 			BarangID:        d.BarangID,
 			NamaBarangBebas: d.NamaBarangBebas,
@@ -158,6 +171,7 @@ func CreateNotaPesanan(c *fiber.Ctx) error {
 			ResepID:         d.ResepID,
 			Gramasi:         d.Gramasi,
 			KemasanDetail:   kemasanArr,
+			KompositDetail:  kompositArr,
 		})
 	}
 
@@ -248,6 +262,10 @@ func UpdateNotaPesanan(c *fiber.Ctx) error {
 				BahanID   uint    `json:"bahan_id"`
 				Kebutuhan float64 `json:"kebutuhan"`
 			} `json:"kemasan_detail"`
+			KompositDetail   []struct {
+				ResepKompositID   uint    `json:"resep_komposit_id"`
+				Kebutuhan float64 `json:"kebutuhan"`
+			} `json:"komposit_detail"`
 		} `json:"details"`
 	}
 
@@ -260,7 +278,7 @@ func UpdateNotaPesanan(c *fiber.Ctx) error {
 	// --- MULAI BLOK REFUND STOK (TAMBAHKAN INI) ---
 	var detailLama []models.NotaPesananDetail
 	// Tarik data detail lama beserta kemasannya
-	DB.Preload("KemasanDetail").Where("nota_pesanan_id = ?", id).Find(&detailLama)
+	DB.Preload("KemasanDetail").Preload("KompositDetail.ResepKomposit.Details").Where("nota_pesanan_id = ?", id).Find(&detailLama)
 
 	for _, d := range detailLama {
 		// Jika statusnya sudah pernah dipotong oleh Tutup Buku, kembalikan stoknya dulu
@@ -271,10 +289,28 @@ func UpdateNotaPesanan(c *fiber.Ctx) error {
 					Update("stok", gorm.Expr("stok + ?", totalBalik))
 			}
 		}
+
+		if d.IsKompositTerpotong {
+			for _, k := range d.KompositDetail {
+				totalBalikKomposit := float64(d.Banyak) * k.Kebutuhan
+				var totalRasio float64
+				for _, detail := range k.ResepKomposit.Details {
+					totalRasio += detail.Rasio
+				}
+				if totalRasio > 0 {
+					for _, detail := range k.ResepKomposit.Details {
+						gramasiKembali := (detail.Rasio / totalRasio) * totalBalikKomposit
+						DB.Model(&models.Bahan{}).Where("id = ?", detail.BahanID).
+							Update("stok", gorm.Expr("stok + ?", gramasiKembali))
+					}
+				}
+			}
+		}
 	}
 
 	// 1. HAPUS KEMASAN DULU (ANAKNYA) AGAR TIDAK DIBLOKIR FOREIGN KEY
 	DB.Exec("DELETE FROM nota_pesanan_detail_kemasans WHERE nota_pesanan_detail_id IN (SELECT id FROM nota_pesanan_details WHERE nota_pesanan_id = ?)", id)
+	DB.Exec("DELETE FROM nota_pesanan_detail_komposits WHERE nota_pesanan_detail_id IN (SELECT id FROM nota_pesanan_details WHERE nota_pesanan_id = ?)", id)
 
 	// 2. BARU HAPUS DETAIL LAMA (INDUKNYA)
 	DB.Where("nota_pesanan_id = ?", id).Delete(&models.NotaPesananDetail{})
@@ -296,6 +332,15 @@ func UpdateNotaPesanan(c *fiber.Ctx) error {
 			})
 		}
 
+		// --- LOGIKA KOMPOSIT BARU ---
+		var kompositArr []models.NotaPesananDetailKomposit
+		for _, k := range d.KompositDetail {
+			kompositArr = append(kompositArr, models.NotaPesananDetailKomposit{
+				ResepKompositID: k.ResepKompositID,
+				Kebutuhan:       k.Kebutuhan,
+			})
+		}
+
 		newDetails = append(newDetails, models.NotaPesananDetail{
 			NotaPesananID:   uint(parsedID),
 			BarangID:        d.BarangID,
@@ -306,6 +351,7 @@ func UpdateNotaPesanan(c *fiber.Ctx) error {
 			ResepID:         d.ResepID,
 			Gramasi:         d.Gramasi,
 			KemasanDetail:   kemasanArr,
+			KompositDetail:  kompositArr,
 		})
 	}
 
@@ -417,15 +463,15 @@ func BatalkanPesanan(c *fiber.Ctx) error {
 	}
 
 	// ==============================================================
-	// BARU: REFUND KEMASAN KUSTOM JIKA SUDAH TERPOTONG TUTUP BUKU
+	// BARU: REFUND KEMASAN & KOMPOSIT KUSTOM JIKA SUDAH TERPOTONG TUTUP BUKU
 	// ==============================================================
 	var details []models.NotaPesananDetail
 	// Tarik detail pesanan kustom yang gemboknya SUDAH TERKUNCI (true)
-	tx.Preload("KemasanDetail").Where("nota_pesanan_id = ? AND is_kemasan_terpotong = ?", id, true).Find(&details)
+	tx.Preload("KemasanDetail").Preload("KompositDetail.ResepKomposit.Details").Where("nota_pesanan_id = ? AND (is_kemasan_terpotong = ? OR is_komposit_terpotong = ?)", id, true, true).Find(&details)
 
 	for _, pk := range details {
 		// Pastikan ini barang kustom (BarangID nil) dan punya kemasan
-		if pk.BarangID == nil && len(pk.KemasanDetail) > 0 {
+		if pk.BarangID == nil && pk.IsKemasanTerpotong && len(pk.KemasanDetail) > 0 {
 			for _, k := range pk.KemasanDetail {
 				totalRefund := float64(pk.Banyak) * k.Kebutuhan
 				// Kembalikan (Refund) stok kardus ke master bahan
@@ -434,8 +480,27 @@ func BatalkanPesanan(c *fiber.Ctx) error {
 			}
 		}
 
+		// Pastikan ini barang kustom (BarangID nil) dan punya komposit
+		if pk.BarangID == nil && pk.IsKompositTerpotong && len(pk.KompositDetail) > 0 {
+			for _, k := range pk.KompositDetail {
+				totalRefundKomposit := float64(pk.Banyak) * k.Kebutuhan
+				var totalRasio float64
+				for _, detail := range k.ResepKomposit.Details {
+					totalRasio += detail.Rasio
+				}
+				if totalRasio > 0 {
+					for _, detail := range k.ResepKomposit.Details {
+						gramasiKembali := (detail.Rasio / totalRasio) * totalRefundKomposit
+						tx.Model(&models.Bahan{}).Where("id = ?", detail.BahanID).
+							Update("stok", gorm.Expr("stok + ?", gramasiKembali))
+					}
+				}
+			}
+		}
+
 		// BUKA GEMBOKNYA: Agar statusnya kembali sinkron
 		tx.Model(&models.NotaPesananDetail{}).Where("id = ?", pk.ID).Update("is_kemasan_terpotong", false)
+		tx.Model(&models.NotaPesananDetail{}).Where("id = ?", pk.ID).Update("is_komposit_terpotong", false)
 	}
 	// ==============================================================
 
@@ -564,8 +629,8 @@ func GetNotaPesananByID(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var pesanan models.NotaPesanan
 
-	// UBAH BARIS INI AGAR GOLANG MENGIRIM DATA KEMASAN SAAT DI-EDIT:
-	if err := DB.Preload("Toko").Preload("Details").Preload("Details.Barang").Preload("Details.KemasanDetail").First(&pesanan, id).Error; err != nil {
+	// UBAH BARIS INI AGAR GOLANG MENGIRIM DATA KEMASAN DAN KOMPOSIT SAAT DI-EDIT:
+	if err := DB.Preload("Toko").Preload("Details").Preload("Details.Barang").Preload("Details.KemasanDetail").Preload("Details.KompositDetail.ResepKomposit").First(&pesanan, id).Error; err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "Pesanan tidak ditemukan"})
 	}
 

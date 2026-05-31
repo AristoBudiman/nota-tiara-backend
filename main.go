@@ -93,6 +93,7 @@ func connectDB() {
 		&models.PengaturanSistem{},
 		&models.AsetSnapshot{},
 		&models.NotaPesananDetailKemasan{},
+		&models.NotaPesananDetailKomposit{},
 		&models.ResepKomposit{},
 		&models.ResepKompositDetail{},
 		&models.BarangKomposit{},

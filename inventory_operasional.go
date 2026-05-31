@@ -788,10 +788,11 @@ func TutupBukuHarian(c *fiber.Ctx) error {
 		}
 	}
 
-	// B. (BARU!) Tambahkan Hasil dari Pesanan PO Kustom + POTONG KEMASAN
+	// B. (BARU!) Tambahkan Hasil dari Pesanan PO Kustom + POTONG KEMASAN & KOMPOSIT
 	var poKustom []models.NotaPesananDetail
 	DB.Joins("JOIN nota_pesanans ON nota_pesanans.id = nota_pesanan_details.nota_pesanan_id").
-		Preload("KemasanDetail"). // <--- WAJIB PRELOAD RELASI BARU
+		Preload("KemasanDetail").
+		Preload("KompositDetail.ResepKomposit.Details"). // <--- WAJIB PRELOAD RELASI KOMPOSIT
 		Where("nota_pesanans.tanggal_kirim = ? AND nota_pesanans.status != 'DIBATALKAN'", tgl).
 		Find(&poKustom)
 
@@ -811,6 +812,27 @@ func TutupBukuHarian(c *fiber.Ctx) error {
 			}
 			// ++ KUNCI GEMBOKNYA: Update baris pesanan ini agar tidak dipotong lagi besok/nanti
 			DB.Model(&models.NotaPesananDetail{}).Where("id = ?", pk.ID).Update("is_kemasan_terpotong", true)
+		}
+
+		// LOGIKA POTONG KOMPOSIT KHUSUS KUSTOM
+		if pk.BarangID == nil && len(pk.KompositDetail) > 0 && !pk.IsKompositTerpotong {
+			for _, k := range pk.KompositDetail {
+				totalKebutuhanKomposit := k.Kebutuhan * float64(pk.Banyak)
+
+				var totalRasio float64
+				for _, detail := range k.ResepKomposit.Details {
+					totalRasio += detail.Rasio
+				}
+
+				if totalRasio > 0 {
+					for _, detail := range k.ResepKomposit.Details {
+						gramasiPotong := (detail.Rasio / totalRasio) * totalKebutuhanKomposit
+						DB.Model(&models.Bahan{}).Where("id = ?", detail.BahanID).
+							Update("stok", gorm.Expr("stok - ?", gramasiPotong))
+					}
+				}
+			}
+			DB.Model(&models.NotaPesananDetail{}).Where("id = ?", pk.ID).Update("is_komposit_terpotong", true)
 		}
 	}
 

@@ -179,6 +179,14 @@ type NotaPesananDetailKemasan struct {
 	Kebutuhan           float64 `gorm:"not null" json:"kebutuhan"` // Butuh berapa pcs per 1 roti kustom
 }
 
+type NotaPesananDetailKomposit struct {
+	ID                  uint          `gorm:"primaryKey" json:"id"`
+	NotaPesananDetailID uint          `gorm:"index" json:"nota_pesanan_detail_id"`
+	ResepKompositID     uint          `gorm:"not null" json:"resep_komposit_id"`
+	ResepKomposit       ResepKomposit `gorm:"foreignKey:ResepKompositID" json:"resep_komposit"`
+	Kebutuhan           float64       `gorm:"not null" json:"kebutuhan"` // Total gramasi komposit per 1 pcs barang kustom
+}
+
 // DETAIL BARANG PESANAN
 type NotaPesananDetail struct {
 	ID            uint `gorm:"primaryKey"`
@@ -201,6 +209,9 @@ type NotaPesananDetail struct {
 
 	KemasanDetail      []NotaPesananDetailKemasan `gorm:"foreignKey:NotaPesananDetailID" json:"kemasan_detail"`
 	IsKemasanTerpotong bool                       `gorm:"default:false" json:"is_kemasan_terpotong"`
+
+	KompositDetail      []NotaPesananDetailKomposit `gorm:"foreignKey:NotaPesananDetailID" json:"komposit_detail"`
+	IsKompositTerpotong bool                        `gorm:"default:false" json:"is_komposit_terpotong"`
 }
 
 // ============================================================================
