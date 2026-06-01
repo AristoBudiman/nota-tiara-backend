@@ -409,3 +409,24 @@ type BarangKomposit struct {
 	ResepKomposit   ResepKomposit `gorm:"foreignKey:ResepKompositID" json:"resep_komposit"`
 	Kebutuhan       float64       `gorm:"not null" json:"kebutuhan"` // Total gramasi komposit per 1 pcs barang
 }
+
+// 16. RIWAYAT KONVERSI BARANAG (PECAH BARANG)
+type KonversiBahan struct {
+	ID          uint                  `gorm:"primaryKey"`
+	DeletedAt   gorm.DeletedAt        `gorm:"index" json:"-"`
+	Tanggal     time.Time             `gorm:"type:date" json:"tanggal"`
+	BahanAsalID uint                  `gorm:"not null" json:"bahan_asal_id"`
+	BahanAsal   Bahan                 `gorm:"foreignKey:BahanAsalID" json:"bahan_asal"`
+	QtyAsal     float64               `gorm:"not null" json:"qty_asal"`
+	Keterangan  string                `json:"keterangan"`
+	Details     []KonversiBahanDetail `gorm:"foreignKey:KonversiBahanID" json:"details"`
+}
+
+type KonversiBahanDetail struct {
+	ID              uint    `gorm:"primaryKey"`
+	KonversiBahanID uint    `gorm:"not null" json:"konversi_bahan_id"`
+	BahanHasilID    uint    `gorm:"not null" json:"bahan_hasil_id"`
+	BahanHasil      Bahan   `gorm:"foreignKey:BahanHasilID" json:"bahan_hasil"`
+	QtyHasil        float64 `gorm:"not null" json:"qty_hasil"`
+}
+

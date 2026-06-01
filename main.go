@@ -98,6 +98,8 @@ func connectDB() {
 		&models.ResepKomposit{},
 		&models.ResepKompositDetail{},
 		&models.BarangKomposit{},
+		&models.KonversiBahan{},
+		&models.KonversiBahanDetail{},
 	)
 	log.Println("Database & Tabel Berhasil Disiapkan! 🏗️")
 
@@ -363,6 +365,9 @@ func main() {
 	api.Get("/opname", RequireRole(RoleSuperadmin), GetOpname)
 	api.Post("/opname", RequireRole(RoleSuperadmin), CreateOpname)
 	api.Get("/konversi/sisa-kemarin", RequireRole(RoleSuperadmin), GetSisaLayakJualKemarin)
+	api.Get("/inventory/pecah-barang", RequireRole(RoleSuperadmin), GetKonversiBahan)
+	api.Post("/inventory/pecah-barang", RequireRole(RoleSuperadmin), CreateKonversiBahan)
+	api.Delete("/inventory/pecah-barang/:id", RequireRole(RoleSuperadmin), DeleteKonversiBahan)
 
 	// BARANG
 	api.Get("/barangs", RequireRole(RoleSuperadmin, RoleSales), GetBarangs)

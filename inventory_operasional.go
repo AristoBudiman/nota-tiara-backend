@@ -1008,3 +1008,131 @@ func CreateOpname(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{"message": "Stock Opname berhasil dicatat!"})
 }
+
+// GetKonversiBahan godoc
+// @Summary Riwayat Konversi Barang (Pecah Barang)
+// @Description Menampilkan riwayat pemotongan barang
+// @Tags 11. Operasional Inventory
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Router /api/inventory/pecah-barang [get]
+func GetKonversiBahan(c *fiber.Ctx) error {
+	var riwayat []models.KonversiBahan
+	DB.Preload("BahanAsal").Preload("Details.BahanHasil").Order("tanggal desc").Find(&riwayat)
+	return c.JSON(riwayat)
+}
+
+// CreateKonversiBahan godoc
+// @Summary Pecah Barang
+// @Description Mengonversi 1 barang utuh menjadi banyak pecahan potongan
+// @Tags 11. Operasional Inventory
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Router /api/inventory/pecah-barang [post]
+func CreateKonversiBahan(c *fiber.Ctx) error {
+	var input struct {
+		Tanggal     string `json:"tanggal"`
+		BahanAsalID uint   `json:"bahan_asal_id"`
+		QtyAsal     float64 `json:"qty_asal"`
+		Keterangan  string `json:"keterangan"`
+		Details     []struct {
+			BahanHasilID uint    `json:"bahan_hasil_id"`
+			QtyHasil     float64 `json:"qty_hasil"`
+		} `json:"details"`
+	}
+
+	if err := c.BodyParser(&input); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	tanggal, _ := time.Parse("2006-01-02", input.Tanggal)
+	if input.Tanggal == "" {
+		tanggal = wib()
+	}
+
+	tx := DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	// 1. Kurangi stok bahan asal
+	var bahanAsal models.Bahan
+	if err := tx.First(&bahanAsal, input.BahanAsalID).Error; err != nil {
+		tx.Rollback()
+		return c.Status(404).JSON(fiber.Map{"error": "Bahan asal tidak ditemukan"})
+	}
+	if bahanAsal.Stok < input.QtyAsal {
+		tx.Rollback()
+		return c.Status(400).JSON(fiber.Map{"error": "Stok bahan asal tidak cukup"})
+	}
+	tx.Model(&bahanAsal).UpdateColumn("stok", gorm.Expr("stok - ?", input.QtyAsal))
+
+	// 2. Buat Record Konversi
+	konversi := models.KonversiBahan{
+		Tanggal:     tanggal,
+		BahanAsalID: input.BahanAsalID,
+		QtyAsal:     input.QtyAsal,
+		Keterangan:  input.Keterangan,
+	}
+	if err := tx.Create(&konversi).Error; err != nil {
+		tx.Rollback()
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	// 3. Tambah stok bahan hasil
+	for _, d := range input.Details {
+		detail := models.KonversiBahanDetail{
+			KonversiBahanID: konversi.ID,
+			BahanHasilID:    d.BahanHasilID,
+			QtyHasil:        d.QtyHasil,
+		}
+		if err := tx.Create(&detail).Error; err != nil {
+			tx.Rollback()
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		
+		// Update stok bahan hasil
+		tx.Model(&models.Bahan{}).Where("id = ?", d.BahanHasilID).UpdateColumn("stok", gorm.Expr("stok + ?", d.QtyHasil))
+	}
+
+	tx.Commit()
+	return c.JSON(fiber.Map{"message": "Barang berhasil dipecah!"})
+}
+
+// DeleteKonversiBahan godoc
+// @Summary Batal Pecah Barang
+// @Description Membatalkan riwayat konversi dan mengembalikan stok
+// @Tags 11. Operasional Inventory
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Router /api/inventory/pecah-barang/{id} [delete]
+func DeleteKonversiBahan(c *fiber.Ctx) error {
+	id := c.Params("id")
+	var konversi models.KonversiBahan
+	
+	if err := DB.Preload("Details").First(&konversi, id).Error; err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Riwayat konversi tidak ditemukan"})
+	}
+
+	tx := DB.Begin()
+
+	// 1. Kembalikan stok bahan asal (ditambah)
+	tx.Model(&models.Bahan{}).Where("id = ?", konversi.BahanAsalID).UpdateColumn("stok", gorm.Expr("stok + ?", konversi.QtyAsal))
+
+	// 2. Tarik kembali stok bahan hasil (dikurangi)
+	for _, d := range konversi.Details {
+		tx.Model(&models.Bahan{}).Where("id = ?", d.BahanHasilID).UpdateColumn("stok", gorm.Expr("stok - ?", d.QtyHasil))
+	}
+
+	// 3. Hapus history
+	tx.Delete(&models.KonversiBahanDetail{}, "konversi_bahan_id = ?", konversi.ID)
+	tx.Delete(&konversi)
+
+	tx.Commit()
+	return c.JSON(fiber.Map{"message": "Riwayat konversi dibatalkan, stok telah dikembalikan."})
+}
