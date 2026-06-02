@@ -222,14 +222,14 @@ type ProduksiMasakInput struct {
 type ProduksiMatangInput struct {
 	Tanggal   string `json:"tanggal" validate:"required" example:"2026-05-16"`
 	BarangID  uint   `json:"barang_id" validate:"required" example:"5"`
-	QtyMatang int    `json:"qty_matang" validate:"required" example:"150"`
+	QtyMatang float64    `json:"qty_matang" validate:"required" example:"150"`
 }
 
 // BarangRusakInput merepresentasikan pencatatan afkir/gratisan
 type BarangRusakInput struct {
 	Tanggal    string `json:"tanggal" validate:"required" example:"2026-05-16"`
 	BarangID   uint   `json:"barang_id" validate:"required" example:"5"`
-	Qty        int    `json:"qty" validate:"required" example:"5"`
+	Qty        float64    `json:"qty" validate:"required" example:"5"`
 	Keterangan string `json:"keterangan" validate:"required" example:"Gosong di oven / Dikasihkan ke tetangga"`
 }
 

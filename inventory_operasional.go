@@ -467,7 +467,7 @@ func CreateProduksiMatang(c *fiber.Ctx) error {
 	var input struct {
 		Tanggal   string `json:"tanggal"`
 		BarangID  uint   `json:"barang_id"`
-		QtyMatang int    `json:"qty_matang"`
+		QtyMatang float64    `json:"qty_matang"`
 	}
 	if err := c.BodyParser(&input); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Format data salah"})
@@ -494,13 +494,13 @@ func CreateProduksiMatang(c *fiber.Ctx) error {
 
 		// 1. Potong Kemasan (Logika Lama)
 		for _, k := range barang.Kemasan {
-			pengurangan := k.Kebutuhan * float64(input.QtyMatang)
+			pengurangan := k.Kebutuhan * input.QtyMatang
 			tx.Model(&models.Bahan{}).Where("id = ?", k.BahanID).Update("stok", gorm.Expr("stok - ?", pengurangan))
 		}
 
 		// 2. Potong Resep Komposit (Logika Potong Pecahan Rasio)
 		for _, komp := range barang.Komposit {
-			totalKebutuhanKomposit := komp.Kebutuhan * float64(input.QtyMatang) // Misal: 40gr * 100pcs = 4000gr
+			totalKebutuhanKomposit := komp.Kebutuhan * input.QtyMatang // Misal: 40gr * 100pcs = 4000gr
 
 			// Hitung total rasio pembagi (misal 4 + 2 + 7 = 13)
 			var totalRasio float64
@@ -550,13 +550,13 @@ func DeleteProduksiMatang(c *fiber.Ctx) error {
 
 		// 3. Kembalikan (Refund) stok kemasan
 		for _, k := range barang.Kemasan {
-			pengembalian := k.Kebutuhan * float64(matang.QtyMatang)
+			pengembalian := k.Kebutuhan * matang.QtyMatang
 			tx.Model(&models.Bahan{}).Where("id = ?", k.BahanID).Update("stok", gorm.Expr("stok + ?", pengembalian))
 		}
 
 		// 4. Kembalikan (Refund) stok Resep Komposit
 		for _, komp := range barang.Komposit {
-			totalKebutuhanKomposit := komp.Kebutuhan * float64(matang.QtyMatang)
+			totalKebutuhanKomposit := komp.Kebutuhan * matang.QtyMatang
 
 			var totalRasio float64
 			for _, detail := range komp.ResepKomposit.Details {
@@ -617,7 +617,7 @@ func CreateBarangRusak(c *fiber.Ctx) error {
 	var input struct {
 		Tanggal    string `json:"tanggal"`
 		BarangID   uint   `json:"barang_id"`
-		Qty        int    `json:"qty"`
+		Qty        float64    `json:"qty"`
 		Keterangan string `json:"keterangan"`
 	}
 	if err := c.BodyParser(&input); err != nil {
@@ -690,7 +690,7 @@ func TutupBukuHarian(c *fiber.Ctx) error {
 	var matangList []models.ProduksiMatang
 	DB.Where("tanggal = ?", tgl).Find(&matangList)
 
-	matangMap := make(map[uint]int)
+	matangMap := make(map[uint]float64)
 	barangMap := make(map[uint]bool)
 
 	var existingSisa []models.SisaLayakJual
@@ -704,11 +704,11 @@ func TutupBukuHarian(c *fiber.Ctx) error {
 		barangMap[m.BarangID] = true
 	}
 
-	kirimMap := make(map[uint]int)
+	kirimMap := make(map[uint]float64)
 
 	type KirimResult struct {
 		BarangID uint
-		Total    int
+		Total    float64
 	}
 
 	// Tarik Nota Reguler
@@ -745,7 +745,7 @@ func TutupBukuHarian(c *fiber.Ctx) error {
 	var rusakList []models.BarangRusak
 	DB.Where("tanggal = ?", tgl).Find(&rusakList)
 
-	rusakMap := make(map[uint]int)
+	rusakMap := make(map[uint]float64)
 	for _, r := range rusakList {
 		rusakMap[r.BarangID] += r.Qty
 		barangMap[r.BarangID] = true
@@ -783,7 +783,7 @@ func TutupBukuHarian(c *fiber.Ctx) error {
 		var b models.Barang
 		DB.First(&b, m.BarangID)
 		if b.ResepID != nil {
-			hasilMap[*b.ResepID] += float64(m.QtyMatang) * b.KebutuhanAdonan
+			hasilMap[*b.ResepID] += m.QtyMatang * b.KebutuhanAdonan
 			resepMap[*b.ResepID] = true
 		}
 	}
@@ -882,7 +882,7 @@ func GetJurnalTutupBuku(c *fiber.Ctx) error {
 
 	var rawSisa []struct {
 		BarangID  uint
-		TotalSisa int
+		TotalSisa float64
 	}
 
 	// AKUMULASI SEMUA SISA (Filter HAVING != 0 dihapus agar angka 0 tetap tampil sebagai bukti terjual habis)

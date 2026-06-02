@@ -309,7 +309,7 @@ type ProduksiMatang struct {
 	Tanggal   time.Time `gorm:"type:date" json:"tanggal"`
 	BarangID  uint      `gorm:"not null" json:"barang_id"`
 	Barang    Barang    `gorm:"foreignKey:BarangID" json:"barang"`
-	QtyMatang int       `gorm:"not null" json:"qty_matang"` // Fisik utuh siap jual
+	QtyMatang float64   `gorm:"not null" json:"qty_matang"` // Fisik utuh siap jual
 }
 
 // 11. SISA LAYAK JUAL (CARRY-OVER STOCK)
@@ -318,7 +318,7 @@ type SisaLayakJual struct {
 	Tanggal  time.Time `gorm:"type:date" json:"tanggal"` // Sisa yang diakui di akhir hari ini
 	BarangID uint      `gorm:"not null" json:"barang_id"`
 	Barang   Barang    `gorm:"foreignKey:BarangID" json:"barang"`
-	QtySisa  int       `gorm:"not null" json:"qty_sisa"`
+	QtySisa  float64   `gorm:"not null" json:"qty_sisa"`
 }
 
 // 12. JURNAL EFISIENSI RESEP (SELISIH MISTERIUS / WASTE DAPUR)
@@ -351,7 +351,7 @@ type BarangRusak struct {
 	Tanggal    time.Time `gorm:"type:date" json:"tanggal"`
 	BarangID   uint      `gorm:"not null" json:"barang_id"`
 	Barang     Barang    `gorm:"foreignKey:BarangID" json:"barang"`
-	Qty        int       `gorm:"not null" json:"qty"`
+	Qty        float64   `gorm:"not null" json:"qty"`
 	Keterangan string    `json:"keterangan"` // Contoh: "Dimakan Tikus", "Tester", "Basi"
 }
 
