@@ -886,14 +886,13 @@ func GetJurnalTutupBuku(c *fiber.Ctx) error {
 	}
 
 	// AKUMULASI SEMUA SISA (Filter HAVING != 0 dihapus agar angka 0 tetap tampil sebagai bukti terjual habis)
+	// UPDATE: Menghapus batas masa_simpan agar perhitungan SUM() selalu akurat dan nilai negatif penjualan punya pasangan produksinya.
 	DB.Raw(`
 		SELECT sisa_layak_juals.barang_id, COALESCE(SUM(sisa_layak_juals.qty_sisa), 0) as total_sisa 
 		FROM sisa_layak_juals 
-		JOIN barangs ON barangs.id = sisa_layak_juals.barang_id
-		WHERE DATE(sisa_layak_juals.tanggal) >= (CAST(? AS DATE) - (barangs.masa_simpan * INTERVAL '1 day'))
-		AND DATE(sisa_layak_juals.tanggal) <= CAST(? AS DATE)
+		WHERE DATE(sisa_layak_juals.tanggal) <= CAST(? AS DATE)
 		GROUP BY sisa_layak_juals.barang_id
-	`, tgl, tgl).Scan(&rawSisa)
+	`, tgl).Scan(&rawSisa)
 
 	var sisaAkhir []models.SisaLayakJual
 	for _, rs := range rawSisa {
@@ -916,7 +915,7 @@ func GetJurnalTutupBuku(c *fiber.Ctx) error {
 //
 // GetSisaLayakJualKemarin godoc
 // @Summary Tarik Sisa Layak Jual (H-1)
-// @Description Mengambil data sisa layak jual hari-hari sebelumnya (berdasarkan batas kadaluwarsa barang) yang masih bisa diseret untuk pengiriman hari ini.
+// @Description Mengambil akumulasi sisa layak jual dari awal operasi hingga H-1.
 // @Tags 11. Operasional Inventory
 // @Accept json
 // @Produce json
@@ -929,17 +928,36 @@ func GetSisaLayakJualKemarin(c *fiber.Ctx) error {
 
 	var sisaAktif []models.SisaLayakJual
 
-	// RUMUS PINTAR: Hapus syarat qty_sisa > 0
-	// Agar jika hari ini kita kirim lebih banyak dari yang dimasak (ambil stok kemarin),
-	// angka pengurangnya (minus) bisa ikut menjumlahkan dan menyeimbangkan stok besok!
-	err := DB.Joins("JOIN barangs ON barangs.id = sisa_layak_juals.barang_id").
-		Where("DATE(sisa_layak_juals.tanggal) >= (CAST(? AS DATE) - (barangs.masa_simpan * INTERVAL '1 day'))", tgl).
-		Where("DATE(sisa_layak_juals.tanggal) < CAST(? AS DATE)", tgl).
-		Find(&sisaAktif).Error
+	var rawSisa []struct {
+		BarangID  uint
+		TotalSisa float64
+	}
+
+	// UPDATE: Menghitung akumulasi SUM() secara backend agar tidak ada utang siluman yang dibawa per baris per hari.
+	// Mengabaikan masa_simpan karena kedaluwarsa sudah diproses melalui fitur BarangRusak/Afkir secara mutlak.
+	err := DB.Raw(`
+		SELECT sisa_layak_juals.barang_id, COALESCE(SUM(sisa_layak_juals.qty_sisa), 0) as total_sisa 
+		FROM sisa_layak_juals 
+		WHERE DATE(sisa_layak_juals.tanggal) < CAST(? AS DATE)
+		GROUP BY sisa_layak_juals.barang_id
+	`, tgl).Scan(&rawSisa).Error
 
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
+
+	for _, rs := range rawSisa {
+		// Kita kembalikan nilai 0 juga ke frontend untuk menandakan bahwa item tsb pernah ada tapi sudah habis
+		var b models.Barang
+		DB.Unscoped().First(&b, rs.BarangID)
+		
+		sisaAktif = append(sisaAktif, models.SisaLayakJual{
+			BarangID: b.ID,
+			Barang:   b,
+			QtySisa:  rs.TotalSisa,
+		})
+	}
+
 	return c.JSON(sisaAktif)
 }
 
