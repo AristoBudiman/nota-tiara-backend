@@ -21,7 +21,7 @@ import (
 // @Router /api/bahan [get]
 func GetBahan(c *fiber.Ctx) error {
 	var bahan []models.Bahan
-	if err := DB.Order("urutan asc").Find(&bahan).Error; err != nil {
+	if err := DB.Order("urutan asc").Preload("KonversiSatuan").Find(&bahan).Error; err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.JSON(bahan)
@@ -324,4 +324,26 @@ func DeleteKomposit(c *fiber.Ctx) error {
 	// Karena struct ResepKomposit punya DeletedAt, ini otomatis SOFT DELETE!
 	DB.Delete(&models.ResepKomposit{}, id)
 	return c.JSON(fiber.Map{"message": "Dihapus sementara"})
+}
+
+// ==========================================
+// PENGATURAN KONVERSI SATUAN
+// ==========================================
+func CreateKonversiSatuan(c *fiber.Ctx) error {
+	var input models.KonversiSatuan
+	if err := c.BodyParser(&input); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+	}
+	if err := DB.Create(&input).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"message": "Konversi satuan berhasil ditambahkan", "data": input})
+}
+
+func DeleteKonversiSatuan(c *fiber.Ctx) error {
+	id := c.Params("id")
+	if err := DB.Delete(&models.KonversiSatuan{}, id).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"message": "Konversi satuan berhasil dihapus"})
 }

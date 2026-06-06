@@ -224,10 +224,18 @@ type Bahan struct {
 	DeletedAt    gorm.DeletedAt `gorm:"index" json:"-"`
 	NamaBahan    string         `gorm:"not null" json:"nama_bahan"`
 	Satuan       string         `gorm:"not null" json:"satuan"` // gr, ml, pcs
-	Stok         float64        `gorm:"default:0" json:"stok"`
-	HargaSaatIni float64        `gorm:"default:0" json:"harga_saat_ini"` // Update otomatis dari pembelian terakhir
-	BatasMinimum float64        `gorm:"default:0" json:"batas_minimum"`
-	Urutan       int            `gorm:"default:0" json:"urutan"`
+	Stok           float64          `gorm:"default:0" json:"stok"`
+	HargaSaatIni   float64          `gorm:"default:0" json:"harga_saat_ini"` // Update otomatis dari pembelian terakhir
+	BatasMinimum   float64          `gorm:"default:0" json:"batas_minimum"`
+	Urutan         int              `gorm:"default:0" json:"urutan"`
+	KonversiSatuan []KonversiSatuan `gorm:"foreignKey:BahanID" json:"konversi"`
+}
+
+type KonversiSatuan struct {
+	ID            uint    `gorm:"primaryKey" json:"id"`
+	BahanID       uint    `gorm:"not null" json:"bahan_id"`
+	NamaSatuan    string  `gorm:"not null" json:"nama_satuan"`    // Contoh: "Sak", "Dus", "Kg"
+	NilaiKonversi float64 `gorm:"not null" json:"nilai_konversi"` // Pengali ke satuan dasar (misal 25000 jika dasarnya gr)
 }
 
 type BarangKemasan struct {

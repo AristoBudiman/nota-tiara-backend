@@ -88,6 +88,7 @@ func connectDB() {
 		&models.SisaLayakJual{},
 		&models.JurnalEfisiensi{},
 		&models.StockOpname{},
+		&models.KonversiSatuan{},
 		&models.BarangKemasan{},
 		&models.BarangRusak{},
 		&models.TransaksiKas{},
@@ -326,6 +327,9 @@ func main() {
 	api.Post("/bahan", RequireRole(RoleSuperadmin), CreateBahan)
 	api.Put("/bahan/:id", RequireRole(RoleSuperadmin), UpdateBahan)
 	api.Delete("/bahan/:id", RequireRole(RoleSuperadmin), DeleteBahan)
+	
+	api.Post("/satuan", RequireRole(RoleSuperadmin), CreateKonversiSatuan)
+	api.Delete("/satuan/:id", RequireRole(RoleSuperadmin), DeleteKonversiSatuan)
 
 	// PEMBELIAN
 	api.Get("/pembelian", RequireRole(RoleSuperadmin), GetPembelianBahan)
