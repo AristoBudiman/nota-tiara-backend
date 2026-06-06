@@ -236,6 +236,19 @@ func UpdateNota(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Format tanggal tidak valid"})
 	}
 
+	// CLEANUP: Hapus detail siluman/duplikat yang tidak dikirim oleh frontend
+	var sentDetailIDs []uint
+	for _, d := range input.Details {
+		if d.ID != 0 {
+			sentDetailIDs = append(sentDetailIDs, d.ID)
+		}
+	}
+	if len(sentDetailIDs) > 0 {
+		DB.Where("nota_id = ? AND id NOT IN ?", id, sentDetailIDs).Delete(&models.NotaDetail{})
+	} else {
+		DB.Where("nota_id = ?", id).Delete(&models.NotaDetail{})
+	}
+
 	for _, d := range input.Details {
 		hRetur := float64(d.BanyakRetur) * d.HargaJual
 		hKirim := float64(d.BanyakKirim) * d.HargaJual // <--- 2. HITUNG ULANG HARGA KIRIM
