@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"time"
+	_ "time/tzdata" // Embed timezone database to the binary
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
