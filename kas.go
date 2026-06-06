@@ -57,6 +57,14 @@ func CreateKas(c *fiber.Ctx) error {
 	}
 
 	tgl, _ := time.Parse("2006-01-02", input.Tanggal)
+	sekarang := wib()
+	if tgl.Format("2006-01-02") == sekarang.Format("2006-01-02") {
+		tgl = sekarang // Jika hari ini, gunakan waktu persis detik ini
+	} else {
+		// Jika hari lain, gunakan jam 23:59:59 agar dihitung full hari itu
+		tgl = time.Date(tgl.Year(), tgl.Month(), tgl.Day(), 23, 59, 59, 0, sekarang.Location())
+	}
+	
 	adminID := c.Locals("admin_id").(uint) // Ambil ID pembuat dari token JWT
 
 	kas := models.TransaksiKas{
@@ -181,8 +189,8 @@ func GetAnalisisAsetLive(c *fiber.Ctx) error {
 
 	// 1. TOTAL KAS (Sampai tanggal target)
 	var totalMasuk, totalKeluar float64
-	DB.Model(&models.TransaksiKas{}).Where("jenis = 'MASUK' AND tanggal <= ?", targetDate).Select("COALESCE(SUM(nominal), 0)").Row().Scan(&totalMasuk)
-	DB.Model(&models.TransaksiKas{}).Where("jenis = 'KELUAR' AND tanggal <= ?", targetDate).Select("COALESCE(SUM(nominal), 0)").Row().Scan(&totalKeluar)
+	DB.Model(&models.TransaksiKas{}).Where("jenis = 'MASUK' AND DATE(tanggal) <= ?", targetDate).Select("COALESCE(SUM(nominal), 0)").Row().Scan(&totalMasuk)
+	DB.Model(&models.TransaksiKas{}).Where("jenis = 'KELUAR' AND DATE(tanggal) <= ?", targetDate).Select("COALESCE(SUM(nominal), 0)").Row().Scan(&totalKeluar)
 	kasLive := totalMasuk - totalKeluar
 
 	// 2. TOTAL PIUTANG (Masih hutang dan dibuat sebelum/pada tanggal target)
@@ -202,7 +210,7 @@ func GetAnalisisAsetLive(c *fiber.Ctx) error {
 	// 5. HITUNG PRIVE (Flow: Dari start_date sampai targetDate)
 	var totalPrive float64
 	DB.Model(&models.TransaksiKas{}).
-		Where("kategori = 'RUMAH_TANGGA' AND jenis = 'KELUAR' AND tanggal >= ? AND tanggal <= ?", startDatePrive, targetDate).
+		Where("kategori = 'RUMAH_TANGGA' AND jenis = 'KELUAR' AND DATE(tanggal) >= ? AND DATE(tanggal) <= ?", startDatePrive, targetDate).
 		Select("COALESCE(SUM(nominal), 0)").Row().Scan(&totalPrive)
 
 	// 6. AMBIL DATA BULAN LALU (Snapshot terakhir sebelum targetDate)
@@ -253,8 +261,8 @@ func SimpanSnapshotAset(c *fiber.Ctx) error {
 	var kM, kK, pR, pPO, inv, hL float64
 
 	// 1. KAS (Masuk dan Keluar DIBATASI sampai tanggal snapshot)
-	DB.Model(&models.TransaksiKas{}).Where("jenis = 'MASUK' AND tanggal <= ?", tglStr).Select("COALESCE(SUM(nominal), 0)").Row().Scan(&kM)
-	DB.Model(&models.TransaksiKas{}).Where("jenis = 'KELUAR' AND tanggal <= ?", tglStr).Select("COALESCE(SUM(nominal), 0)").Row().Scan(&kK)
+	DB.Model(&models.TransaksiKas{}).Where("jenis = 'MASUK' AND DATE(tanggal) <= ?", tglStr).Select("COALESCE(SUM(nominal), 0)").Row().Scan(&kM)
+	DB.Model(&models.TransaksiKas{}).Where("jenis = 'KELUAR' AND DATE(tanggal) <= ?", tglStr).Select("COALESCE(SUM(nominal), 0)").Row().Scan(&kK)
 
 	// 2. PIUTANG (Nota/PO yang dibuat s/d tanggal snapshot dan belum lunas)
 	DB.Model(&models.Nota{}).Where("is_lunas = false AND status != 'DIBATALKAN' AND tanggal_kirim <= ?", tglStr).Select("COALESCE(SUM(total_bayar), 0)").Row().Scan(&pR)

@@ -184,7 +184,7 @@ func CreateNota(c *fiber.Ctx) error {
 	if settingKas.Value == "true" {
 		if input.IsLunas {
 			DB.Create(&models.TransaksiKas{
-				Tanggal:    time.Now(),
+				Tanggal:    wib(),
 				Kategori:   "REGULER",
 				Jenis:      "MASUK",
 				Nominal:    totalKirim,
@@ -321,7 +321,7 @@ func UpdateNota(c *fiber.Ctx) error {
 			} else {
 				// Belum ada, CREATE kas masuk
 				DB.Create(&models.TransaksiKas{
-					Tanggal:    time.Now(),
+					Tanggal:    wib(),
 					Kategori:   "REGULER",
 					Jenis:      "MASUK",
 					Nominal:    totalBayarAkhir,
@@ -411,7 +411,7 @@ func PulihkanNota(c *fiber.Ctx) error {
 	if settingKas.Value == "true" && nota.IsLunas {
 		adminID := c.Locals("admin_id").(uint)
 		tx.Create(&models.TransaksiKas{
-			Tanggal:    time.Now(),
+			Tanggal:    wib(),
 			Kategori:   "REGULER",
 			Jenis:      "MASUK",
 			Nominal:    nota.TotalBayar, // Masukkan nilai akhir nota
@@ -492,10 +492,10 @@ func GetDashboardSales(c *fiber.Ctx) error {
 	var poTugas []models.NotaPesanan
 
 	// Nota Aktif: 8 jam terakhir, status bebas
-	DB.Preload("Toko").Where("created_by = ? AND created_at >= ?", adminID, time.Now().Add(-8*time.Hour)).Order("id desc").Find(&notaAktif)
+	DB.Preload("Toko").Where("created_by = ? AND created_at >= ?", adminID, wib().Add(-8*time.Hour)).Order("id desc").Find(&notaAktif)
 
 	// Tugas Khusus (Reguler) dari Superadmin
-	DB.Preload("Toko").Where("assigned_to = ? AND (jumlah_retur = 0 OR updated_at > ?)", adminID, time.Now().Add(-12*time.Hour)).Order("id desc").Find(&notaTugas)
+	DB.Preload("Toko").Where("assigned_to = ? AND (jumlah_retur = 0 OR updated_at > ?)", adminID, wib().Add(-12*time.Hour)).Order("id desc").Find(&notaTugas)
 
 	// BARU: Tugas Khusus Pesanan (PO) dari Superadmin yang BELUM SELESAI
 	DB.Where("assigned_to = ? AND status != 'DIAMBIL'", adminID).Order("id desc").Find(&poTugas)
@@ -517,7 +517,7 @@ func GetKunjunganToko(c *fiber.Ctx) error { // Memeriksa tagihan Retur saat tiba
 	var notaBelumRetur []models.Nota
 
 	DB.Preload("Toko").Where("toko_id = ? AND status = 'KIRIM' AND jumlah_retur = 0 AND tanggal_kirim >= ?",
-		tokoID, time.Now().AddDate(0, -1, 0)).Order("tanggal_kirim asc").Find(&notaBelumRetur)
+		tokoID, wib().AddDate(0, -1, 0)).Order("tanggal_kirim asc").Find(&notaBelumRetur)
 
 	return c.JSON(notaBelumRetur)
 }

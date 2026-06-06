@@ -197,7 +197,7 @@ func CreateNotaPesanan(c *fiber.Ctx) error {
 		// 1. Catat DP Jika Ada
 		if pesanan.UangMuka > 0 {
 			DB.Create(&models.TransaksiKas{
-				Tanggal:    time.Now(),
+				Tanggal:    wib(),
 				Kategori:   "PESANAN",
 				Jenis:      "MASUK",
 				Nominal:    pesanan.UangMuka,
@@ -210,7 +210,7 @@ func CreateNotaPesanan(c *fiber.Ctx) error {
 		// 2. Catat Pelunasan Sisa PO jika langsung dilunasi
 		if pesanan.IsLunas && pesanan.SisaTagihan > 0 {
 			DB.Create(&models.TransaksiKas{
-				Tanggal:    time.Now(),
+				Tanggal:    wib(),
 				Kategori:   "PESANAN",
 				Jenis:      "MASUK",
 				Nominal:    pesanan.SisaTagihan,
@@ -405,7 +405,7 @@ func UpdateNotaPesanan(c *fiber.Ctx) error {
 				DB.Model(&kasDP).Updates(map[string]interface{}{"nominal": input.UangMuka, "keterangan": ketDP})
 			} else {
 				DB.Create(&models.TransaksiKas{
-					Tanggal: time.Now(), Kategori: "PESANAN", Jenis: "MASUK",
+					Tanggal: wib(), Kategori: "PESANAN", Jenis: "MASUK",
 					Nominal: input.UangMuka, Keterangan: ketDP, NoNotaRef: poLama.NoNota, CreatedBy: adminID,
 				})
 			}
@@ -425,7 +425,7 @@ func UpdateNotaPesanan(c *fiber.Ctx) error {
 				DB.Model(&kasSisa).Updates(map[string]interface{}{"nominal": sisaTagihan, "keterangan": ketSisa})
 			} else {
 				DB.Create(&models.TransaksiKas{
-					Tanggal: time.Now(), Kategori: "PESANAN", Jenis: "MASUK",
+					Tanggal: wib(), Kategori: "PESANAN", Jenis: "MASUK",
 					Nominal: sisaTagihan, Keterangan: ketSisa, NoNotaRef: poLama.NoNota, CreatedBy: adminID,
 				})
 			}
@@ -555,7 +555,7 @@ func PulihkanPesanan(c *fiber.Ctx) error {
 
 		if pesanan.UangMuka > 0 {
 			tx.Create(&models.TransaksiKas{
-				Tanggal:    time.Now(),
+				Tanggal:    wib(),
 				Kategori:   "PESANAN",
 				Jenis:      "MASUK",
 				Nominal:    pesanan.UangMuka,
@@ -567,7 +567,7 @@ func PulihkanPesanan(c *fiber.Ctx) error {
 
 		if pesanan.IsLunas && pesanan.SisaTagihan > 0 {
 			tx.Create(&models.TransaksiKas{
-				Tanggal:    time.Now(),
+				Tanggal:    wib(),
 				Kategori:   "PESANAN",
 				Jenis:      "MASUK",
 				Nominal:    pesanan.SisaTagihan,

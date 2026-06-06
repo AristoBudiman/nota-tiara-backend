@@ -129,7 +129,7 @@ func CreatePembelianBahan(c *fiber.Ctx) error {
 		ketKas := fmt.Sprintf("Belanja Bahan Baku (Nota #%d) - %d Macam Item. Keterangan: %s", pembelian.ID, len(input.Details), input.Keterangan)
 
 		if err := tx.Create(&models.TransaksiKas{
-			Tanggal:    time.Now(),
+			Tanggal:    wib(),
 			Kategori:   "BAHAN",
 			Jenis:      "KELUAR",
 			Nominal:    grandTotal,
@@ -197,7 +197,7 @@ func UpdateStatusPembelian(c *fiber.Ctx) error {
 
 			if result.RowsAffected == 0 {
 				tx.Create(&models.TransaksiKas{
-					Tanggal:    time.Now(),
+					Tanggal:    wib(),
 					Kategori:   "BAHAN",
 					Jenis:      "KELUAR",
 					Nominal:    p.TotalBiaya,
@@ -974,7 +974,16 @@ func GetSisaLayakJualKemarin(c *fiber.Ctx) error {
 // @Router /api/opname [get]
 func GetOpname(c *fiber.Ctx) error {
 	var opname []models.StockOpname
-	DB.Preload("Bahan").Order("id desc").Limit(50).Find(&opname)
+	query := DB.Preload("Bahan").Order("id desc")
+
+	startDate := c.Query("start")
+	endDate := c.Query("end")
+
+	if startDate != "" && endDate != "" {
+		query = query.Where("tanggal >= ? AND tanggal <= ?", startDate, endDate)
+	}
+
+	query.Find(&opname)
 	return c.JSON(opname)
 }
 

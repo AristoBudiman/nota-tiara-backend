@@ -58,8 +58,8 @@ func connectDB() {
 		ssl = "disable"
 	}
 
-	// Masukkan variabel ssl ke dalam dsn
-	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=%s",
+	// Masukkan variabel ssl ke dalam dsn dan paksa TimeZone Asia/Jakarta
+	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=%s TimeZone=Asia/Jakarta",
 		host, user, password, dbname, port, ssl)
 
 	DB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})

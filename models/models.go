@@ -357,7 +357,7 @@ type BarangRusak struct {
 
 type TransaksiKas struct {
 	ID         uint      `gorm:"primaryKey" json:"id"`
-	Tanggal    time.Time `gorm:"type:date" json:"tanggal"`
+	Tanggal    time.Time `json:"tanggal"`
 	Kategori   string    `json:"kategori"`
 	Jenis      string    `json:"jenis"`
 	Nominal    float64   `json:"nominal"`

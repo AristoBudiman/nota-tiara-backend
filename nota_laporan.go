@@ -28,7 +28,7 @@ func GetCatatanBesar(c *fiber.Ctx) error {
 	tanggal := c.Query("tanggal")
 
 	if tanggal == "" {
-		tanggal = time.Now().Format("2006-01-02")
+		tanggal = wib().Format("2006-01-02")
 	}
 
 	// Filter dinamis: Jika siklus kosong (misal hari Minggu), HANYA cari toko harian
