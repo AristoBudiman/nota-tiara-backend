@@ -71,6 +71,8 @@ func connectDB() {
 	log.Println("Koneksi Database Berhasil (via .env)! ✅")
 
 	DB.AutoMigrate(
+		&models.Role{},
+		&models.Permission{},
 		&models.ProfilTiara{},
 		&models.Toko{},
 		&models.Barang{},
@@ -105,6 +107,9 @@ func connectDB() {
 	)
 	log.Println("Database & Tabel Berhasil Disiapkan! 🏗️")
 
+	// Jalankan SeedRBAC (Migrasi RBAC Dinamis)
+	SeedRBAC(DB)
+
 	var settingKas models.PengaturanSistem
 	if err := DB.Where("key = ?", "ENABLE_KAS_SYNC").First(&settingKas).Error; err != nil {
 		// Jika belum ada di database, buat otomatis dengan nilai "false"
@@ -123,11 +128,14 @@ func connectDB() {
 	if adminUser != "" && adminPass != "" {
 		var adminAccount models.Admin
 		if err := DB.Where("username = ?", adminUser).First(&adminAccount).Error; err != nil {
+			var superRole models.Role
+			DB.Where("nama_role = ?", "Superadmin").First(&superRole)
+
 			hashedAdmin, _ := bcrypt.GenerateFromPassword([]byte(adminPass), bcrypt.DefaultCost)
 			DB.Create(&models.Admin{
 				Username: adminUser,
 				Password: string(hashedAdmin),
-				Role:     "superadmin",
+				RoleID:   superRole.ID,
 			})
 			log.Println("✅ Akun Super Admin siap!")
 		}
@@ -142,11 +150,14 @@ func connectDB() {
 	if salesUser != "" && salesPass != "" {
 		var salesAccount models.Admin
 		if err := DB.Where("username = ?", salesUser).First(&salesAccount).Error; err != nil {
+			var salesRole models.Role
+			DB.Where("nama_role = ?", "Sales").First(&salesRole)
+
 			hashedSales, _ := bcrypt.GenerateFromPassword([]byte(salesPass), bcrypt.DefaultCost)
 			DB.Create(&models.Admin{
 				Username: salesUser,
 				Password: string(hashedSales),
-				Role:     "sales",
+				RoleID:   salesRole.ID,
 			})
 			log.Println("✅ Akun Sales siap!")
 		}
@@ -176,7 +187,7 @@ func LoginAdmin(c *fiber.Ctx) error {
 	}
 
 	var admin models.Admin
-	if err := DB.Where("username = ?", input.Username).First(&admin).Error; err != nil {
+	if err := DB.Preload("Role").Preload("Role.Permissions").Where("username = ?", input.Username).First(&admin).Error; err != nil {
 		return c.Status(401).JSON(fiber.Map{"error": "Username atau Password salah"})
 	}
 
@@ -185,11 +196,18 @@ func LoginAdmin(c *fiber.Ctx) error {
 		return c.Status(401).JSON(fiber.Map{"error": "Username atau Password salah"})
 	}
 
+	// Ekstrak list permissions
+	var perms []string
+	for _, p := range admin.Role.Permissions {
+		perms = append(perms, p.Kode)
+	}
+
 	// Jika sukses, buat token JWT
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"admin_id": admin.ID,
-		"role":     admin.Role,
-		"exp":      time.Now().Add(time.Hour * 24).Unix(), // Berlaku 24 jam
+		"admin_id":    admin.ID,
+		"role":        admin.Role.NamaRole, // Pertahankan nama role (opsional untuk frontend)
+		"permissions": perms,               // Simpan array permission ke token
+		"exp":         time.Now().Add(time.Hour * 24).Unix(), // Berlaku 24 jam
 	})
 
 	tokenString, err := token.SignedString(jwtSecret)
@@ -198,9 +216,10 @@ func LoginAdmin(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{
-		"message": "Login sukses",
-		"token":   tokenString,
-		"role":    admin.Role,
+		"message":     "Login sukses",
+		"token":       tokenString,
+		"role":        admin.Role.NamaRole,
+		"permissions": perms,
 	})
 }
 
@@ -220,35 +239,90 @@ func Protected(c *fiber.Ctx) error {
 	// BARU: Ekstrak data diri dan simpan di memori lokal request
 	claims := token.Claims.(jwt.MapClaims)
 	c.Locals("admin_id", uint(claims["admin_id"].(float64)))
-	c.Locals("role", claims["role"].(string))
+	
+	if roleStr, ok := claims["role"].(string); ok {
+		c.Locals("role", roleStr)
+	}
+
+	if permsIfc, ok := claims["permissions"].([]interface{}); ok {
+		var perms []string
+		for _, p := range permsIfc {
+			perms = append(perms, p.(string))
+		}
+		c.Locals("permissions", perms)
+	}
 
 	return c.Next()
 }
 
-// MIDDLEWARE RBAC (SATPAM LAPIS KEDUA)
-func RequireRole(allowedRoles ...string) fiber.Handler {
+// MIDDLEWARE RBAC BARU (Menggunakan Permissions)
+func RequirePermission(requiredPermission string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		// Ambil role dari c.Locals yang diset oleh fungsi Protected
-		userRole := c.Locals("role")
-		if userRole == nil {
+		// Bypass Superadmin (Dewa)
+		roleStr, ok := c.Locals("role").(string)
+		if ok && roleStr == "Superadmin" {
+			return c.Next() // Bypass all
+		}
+
+		userPerms, ok := c.Locals("permissions").([]string)
+		if !ok {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-				"error": "Akses ditolak. Identitas Role tidak ditemukan.",
+				"error": "Akses ditolak. Tidak ada data hak akses.",
 			})
 		}
 
-		roleStr := userRole.(string)
-
-		// Cek apakah role user ada di dalam daftar role yang diizinkan
-		for _, allowedRole := range allowedRoles {
-			if roleStr == allowedRole {
-				return c.Next() // Role cocok, silakan masuk!
+		hasAccess := false
+		for _, p := range userPerms {
+			if p == requiredPermission {
+				hasAccess = true
+				break
 			}
 		}
 
-		// Jika looping selesai dan tidak ada yang cocok
-		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-			"error": "Akses Ditolak! Role Anda (" + roleStr + ") tidak memiliki izin untuk tindakan ini.",
-		})
+		if !hasAccess {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"error": "Akses ditolak. Anda tidak memiliki izin ini (" + requiredPermission + ").",
+			})
+		}
+
+		return c.Next()
+	}
+}
+
+// MIDDLEWARE RBAC BARU (Multiple Permissions dengan logika OR)
+func RequirePermissionAny(requiredPermissions ...string) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		roleStr, ok := c.Locals("role").(string)
+		if ok && roleStr == "Superadmin" {
+			return c.Next()
+		}
+
+		userPerms, ok := c.Locals("permissions").([]string)
+		if !ok {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"error": "Akses ditolak. Tidak ada data hak akses.",
+			})
+		}
+
+		hasAccess := false
+		for _, required := range requiredPermissions {
+			for _, p := range userPerms {
+				if p == required {
+					hasAccess = true
+					break
+				}
+			}
+			if hasAccess {
+				break
+			}
+		}
+
+		if !hasAccess {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"error": "Anda tidak memiliki satupun hak dari yang dibutuhkan.",
+			})
+		}
+		return c.Next()
 	}
 }
 
@@ -317,134 +391,142 @@ func main() {
 	api.Get("/profile", GetProfile)
 	api.Put("/profile", UpdateProfile)
 
-	api.Get("/admins", RequireRole(RoleSuperadmin, RoleSales), func(c *fiber.Ctx) error {
+	api.Get("/admins", func(c *fiber.Ctx) error {
 		var admins []models.Admin
 		// Ambil semua admin, lalu kirim ke Vue (Sembunyikan Password)
-		if err := DB.Select("id, username, role").Find(&admins).Error; err != nil {
+		if err := DB.Preload("Role").Select("id, username, role_id").Find(&admins).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 		return c.JSON(admins)
 	})
-	api.Post("/admins", RequireRole(RoleSuperadmin), CreateAdmin)
-	api.Put("/admins/:id", RequireRole(RoleSuperadmin), UpdateAdmin)
-	api.Delete("/admins/:id", RequireRole(RoleSuperadmin), DeleteAdmin)
+	api.Post("/admins", RequirePermission("manage_admin"), CreateAdmin)
+	api.Put("/admins/:id", RequirePermission("manage_admin"), UpdateAdmin)
+	api.Delete("/admins/:id", RequirePermission("manage_admin"), DeleteAdmin)
+
+	// ROLES & PERMISSIONS
+	api.Get("/roles", RequirePermission("manage_admin"), GetRoles)
+	api.Post("/roles", RequirePermission("manage_admin"), CreateRole)
+	api.Put("/roles/:id", RequirePermission("manage_admin"), UpdateRole)
+	api.Delete("/roles/:id", RequirePermission("manage_admin"), DeleteRole)
+	
+	api.Get("/permissions", RequirePermission("manage_admin"), GetPermissions)
 
 	// BAHAN
-	api.Get("/bahan", RequireRole(RoleSuperadmin), GetBahan)
-	api.Put("/bahan/reorder", RequireRole(RoleSuperadmin), UpdateUrutanBahan)
-	api.Post("/bahan", RequireRole(RoleSuperadmin), CreateBahan)
-	api.Put("/bahan/:id", RequireRole(RoleSuperadmin), UpdateBahan)
-	api.Delete("/bahan/:id", RequireRole(RoleSuperadmin), DeleteBahan)
+	api.Get("/bahan", GetBahan)
+	api.Put("/bahan/reorder", RequirePermission("manage_master_bahan"), UpdateUrutanBahan)
+	api.Post("/bahan", RequirePermission("manage_master_bahan"), CreateBahan)
+	api.Put("/bahan/:id", RequirePermission("manage_master_bahan"), UpdateBahan)
+	api.Delete("/bahan/:id", RequirePermission("manage_master_bahan"), DeleteBahan)
 	
-	api.Post("/satuan", RequireRole(RoleSuperadmin), CreateKonversiSatuan)
-	api.Delete("/satuan/:id", RequireRole(RoleSuperadmin), DeleteKonversiSatuan)
+	api.Post("/satuan", RequirePermission("manage_master_bahan"), CreateKonversiSatuan)
+	api.Delete("/satuan/:id", RequirePermission("manage_master_bahan"), DeleteKonversiSatuan)
 
 	// PEMBELIAN
-	api.Get("/pembelian", RequireRole(RoleSuperadmin), GetPembelianBahan)
-	api.Post("/pembelian", RequireRole(RoleSuperadmin), CreatePembelianBahan)
-	api.Put("/pembelian/:id/status", RequireRole(RoleSuperadmin), UpdateStatusPembelian)
-	api.Delete("/pembelian/:id", RequireRole(RoleSuperadmin), DeletePembelianBahan)
-	api.Put("/pembelian/:id/pulihkan", RequireRole(RoleSuperadmin), RestorePembelianBahan)
+	api.Get("/pembelian", RequirePermission("manage_pembelian"), GetPembelianBahan)
+	api.Post("/pembelian", RequirePermission("manage_pembelian"), CreatePembelianBahan)
+	api.Put("/pembelian/:id/status", RequirePermission("manage_pembelian"), UpdateStatusPembelian)
+	api.Delete("/pembelian/:id", RequirePermission("manage_pembelian"), DeletePembelianBahan)
+	api.Put("/pembelian/:id/pulihkan", RequirePermission("manage_pembelian"), RestorePembelianBahan)
 
 	// RESEP
-	api.Get("/resep", RequireRole(RoleSuperadmin), GetResep)
-	api.Post("/resep", RequireRole(RoleSuperadmin), CreateResep)
-	api.Put("/resep/:id", RequireRole(RoleSuperadmin), UpdateResep)
-	api.Delete("/resep/:id", RequireRole(RoleSuperadmin), DeleteResep)
+	api.Get("/resep", RequirePermission("manage_resep"), GetResep)
+	api.Post("/resep", RequirePermission("manage_resep"), CreateResep)
+	api.Put("/resep/:id", RequirePermission("manage_resep"), UpdateResep)
+	api.Delete("/resep/:id", RequirePermission("manage_resep"), DeleteResep)
 
 	// KOMPOSIT
-	api.Get("/komposit", RequireRole(RoleSuperadmin), GetKomposit)
-	api.Post("/komposit", RequireRole(RoleSuperadmin), CreateKomposit)
-	api.Put("/komposit/:id", RequireRole(RoleSuperadmin), UpdateKomposit)
-	api.Delete("/komposit/:id", RequireRole(RoleSuperadmin), DeleteKomposit)
+	api.Get("/komposit", RequirePermission("manage_komposit"), GetKomposit)
+	api.Post("/komposit", RequirePermission("manage_komposit"), CreateKomposit)
+	api.Put("/komposit/:id", RequirePermission("manage_komposit"), UpdateKomposit)
+	api.Delete("/komposit/:id", RequirePermission("manage_komposit"), DeleteKomposit)
 
 	// PRODUKSI HARIAN
-	api.Get("/produksi/masak", RequireRole(RoleSuperadmin), GetProduksiMasak)
-	api.Post("/produksi/masak", RequireRole(RoleSuperadmin), CreateProduksiMasak)
-	api.Delete("/produksi/masak/:id", RequireRole(RoleSuperadmin), DeleteProduksiMasak)
-	api.Get("/produksi/matang", RequireRole(RoleSuperadmin), GetProduksiMatang)
-	api.Post("/produksi/matang", RequireRole(RoleSuperadmin), CreateProduksiMatang)
-	api.Delete("/produksi/matang/:id", RequireRole(RoleSuperadmin), DeleteProduksiMatang)
+	api.Get("/produksi/masak", RequirePermission("manage_produksi_masak"), GetProduksiMasak)
+	api.Post("/produksi/masak", RequirePermission("manage_produksi_masak"), CreateProduksiMasak)
+	api.Delete("/produksi/masak/:id", RequirePermission("manage_produksi_masak"), DeleteProduksiMasak)
+	api.Get("/produksi/matang", RequirePermission("manage_produksi_matang"), GetProduksiMatang)
+	api.Post("/produksi/matang", RequirePermission("manage_produksi_matang"), CreateProduksiMatang)
+	api.Delete("/produksi/matang/:id", RequirePermission("manage_produksi_matang"), DeleteProduksiMatang)
 
 	// AFKIR / BARANG RUSAK
-	api.Get("/inventory/rusak", RequireRole(RoleSuperadmin), GetBarangRusak)
-	api.Post("/inventory/rusak", RequireRole(RoleSuperadmin), CreateBarangRusak)
-	api.Delete("/inventory/rusak/:id", RequireRole(RoleSuperadmin), DeleteBarangRusak)
+	api.Get("/inventory/rusak", RequirePermission("manage_barang_rusak"), GetBarangRusak)
+	api.Post("/inventory/rusak", RequirePermission("manage_barang_rusak"), CreateBarangRusak)
+	api.Delete("/inventory/rusak/:id", RequirePermission("manage_barang_rusak"), DeleteBarangRusak)
 
 	// TUTUP BUKU & OPNAME
-	api.Post("/produksi/tutup-buku", RequireRole(RoleSuperadmin), TutupBukuHarian)
-	api.Get("/produksi/jurnal", RequireRole(RoleSuperadmin), GetJurnalTutupBuku)
-	api.Get("/opname", RequireRole(RoleSuperadmin), GetOpname)
-	api.Post("/opname", RequireRole(RoleSuperadmin), CreateOpname)
-	api.Get("/konversi/sisa-kemarin", RequireRole(RoleSuperadmin), GetSisaLayakJualKemarin)
-	api.Get("/inventory/pecah-barang", RequireRole(RoleSuperadmin), GetKonversiBahan)
-	api.Post("/inventory/pecah-barang", RequireRole(RoleSuperadmin), CreateKonversiBahan)
-	api.Delete("/inventory/pecah-barang/:id", RequireRole(RoleSuperadmin), DeleteKonversiBahan)
+	api.Post("/produksi/tutup-buku", RequirePermission("manage_tutup_buku"), TutupBukuHarian)
+	api.Get("/produksi/jurnal", RequirePermission("view_jurnal_dapur"), GetJurnalTutupBuku)
+	api.Get("/opname", RequirePermission("manage_opname"), GetOpname)
+	api.Post("/opname", RequirePermission("manage_opname"), CreateOpname)
+	api.Get("/konversi/sisa-kemarin", RequirePermission("view_jurnal_dapur"), GetSisaLayakJualKemarin)
+	api.Get("/inventory/pecah-barang", RequirePermission("manage_pecah_barang"), GetKonversiBahan)
+	api.Post("/inventory/pecah-barang", RequirePermission("manage_pecah_barang"), CreateKonversiBahan)
+	api.Delete("/inventory/pecah-barang/:id", RequirePermission("manage_pecah_barang"), DeleteKonversiBahan)
 
 	// BARANG
-	api.Get("/barangs", RequireRole(RoleSuperadmin, RoleSales), GetBarangs)
-	api.Put("/barangs/reorder", RequireRole(RoleSuperadmin), UpdateUrutanBarang)
-	api.Post("/barangs", RequireRole(RoleSuperadmin), CreateBarang)
-	api.Put("/barangs/:id", RequireRole(RoleSuperadmin), UpdateBarang)
-	api.Delete("/barangs/:id", RequireRole(RoleSuperadmin), DeleteBarang)
+	api.Get("/barangs", GetBarangs)
+	api.Put("/barangs/reorder", RequirePermission("manage_master_barang"), UpdateUrutanBarang)
+	api.Post("/barangs", RequirePermission("manage_master_barang"), CreateBarang)
+	api.Put("/barangs/:id", RequirePermission("manage_master_barang"), UpdateBarang)
+	api.Delete("/barangs/:id", RequirePermission("manage_master_barang"), DeleteBarang)
 
 	// TOKO
-	api.Get("/tokos", RequireRole(RoleSuperadmin, RoleSales), GetTokos)
-	api.Post("/tokos", RequireRole(RoleSuperadmin), CreateToko)
-	api.Put("/tokos/:id", RequireRole(RoleSuperadmin), UpdateToko)
-	api.Delete("/tokos/:id", RequireRole(RoleSuperadmin), DeleteToko)
+	api.Get("/tokos", GetTokos)
+	api.Post("/tokos", RequirePermission("manage_master_toko"), CreateToko)
+	api.Put("/tokos/:id", RequirePermission("manage_master_toko"), UpdateToko)
+	api.Delete("/tokos/:id", RequirePermission("manage_master_toko"), DeleteToko)
 
 	// NOTA
-	api.Get("/profil", RequireRole(RoleSuperadmin, RoleSales), GetProfilTiara)
-	api.Get("/notas/next-number", RequireRole(RoleSuperadmin, RoleSales), GetNextNotaNumber)
-	api.Get("/notas", RequireRole(RoleSuperadmin), GetNotas)
-	api.Get("/notas/:id", RequireRole(RoleSuperadmin, RoleSales), GetNotaByID)
-	api.Post("/notas", RequireRole(RoleSuperadmin, RoleSales), CreateNota)
-	api.Put("/notas/:id", RequireRole(RoleSuperadmin, RoleSales), UpdateNota)
-	api.Put("/notas/:id/batal", RequireRole(RoleSuperadmin, RoleSales), BatalkanNota)
-	api.Put("/notas/:id/pulihkan", RequireRole(RoleSuperadmin, RoleSales), PulihkanNota)
+	api.Get("/profil", GetProfilTiara)
+	api.Get("/notas/next-number", RequirePermission("manage_nota_jual"), GetNextNotaNumber)
+	api.Get("/notas", RequirePermission("view_riwayat_nota"), GetNotas)
+	api.Get("/notas/:id", RequirePermission("manage_nota_jual"), GetNotaByID)
+	api.Post("/notas", RequirePermission("manage_nota_jual"), CreateNota)
+	api.Put("/notas/:id", RequirePermission("manage_nota_jual"), UpdateNota)
+	api.Put("/notas/:id/batal", RequirePermission("manage_nota_jual"), BatalkanNota)
+	api.Put("/notas/:id/pulihkan", RequirePermission("manage_nota_jual"), PulihkanNota)
 
 	// CATATAN BESAR
-	api.Get("/catatan-besar", RequireRole(RoleSuperadmin), GetCatatanBesar)
+	api.Get("/catatan-besar", RequirePermission("view_catatan_besar"), GetCatatanBesar)
 
 	// RANGKUMAN
-	api.Get("/rangkuman", RequireRole(RoleSuperadmin), GetRangkuman)
-	api.Get("/rangkuman-per-toko", RequireRole(RoleSuperadmin), GetRangkumanPerToko)
+	api.Get("/rangkuman", RequirePermission("view_rangkuman_penjualan"), GetRangkuman)
+	api.Get("/rangkuman-per-toko", RequirePermission("view_rangkuman_penjualan"), GetRangkumanPerToko)
 
 	// KAS
-	api.Get("/kas", RequireRole(RoleSuperadmin), GetKas)
-	api.Post("/kas", RequireRole(RoleSuperadmin), CreateKas)
-	api.Delete("/kas/:id", RequireRole(RoleSuperadmin), DeleteKas)
+	api.Get("/kas", RequirePermission("manage_kas"), GetKas)
+	api.Post("/kas", RequirePermission("manage_kas"), CreateKas)
+	api.Delete("/kas/:id", RequirePermission("manage_kas"), DeleteKas)
 
 	// SAKLAR KAS (TAMBAHKAN INI)
-	api.Get("/pengaturan/kas", RequireRole(RoleSuperadmin), GetPengaturanKas)
-	api.Put("/pengaturan/kas", RequireRole(RoleSuperadmin), TogglePengaturanKas)
+	api.Get("/pengaturan/kas", RequirePermission("manage_saklar_kas"), GetPengaturanKas)
+	api.Put("/pengaturan/kas", RequirePermission("manage_saklar_kas"), TogglePengaturanKas)
 
 	// SAMPAH
-	api.Get("/sampah", RequireRole(RoleSuperadmin), GetTrash)
-	api.Put("/sampah/:type/:id", RequireRole(RoleSuperadmin), RestoreData)
+	api.Get("/sampah", RequirePermission("manage_sampah"), GetTrash)
+	api.Put("/sampah/:type/:id", RequirePermission("manage_sampah"), RestoreData)
 
 	// NOTA PESANAN (RUTE STATIS DI ATAS)
-	api.Get("/pesanan/next-number", RequireRole(RoleSuperadmin), GetNextNotaPesananNumber)
-	api.Get("/pesanan/catatan", RequireRole(RoleSuperadmin), GetCatatanPesanan)
-	api.Get("/pesanan/riwayat", RequireRole(RoleSuperadmin), GetRiwayatPesanan)
-	api.Get("/pesanan/rangkuman-bulanan", RequireRole(RoleSuperadmin), GetRangkumanPesanan)
+	api.Get("/pesanan/next-number", RequirePermission("manage_nota_pesanan"), GetNextNotaPesananNumber)
+	api.Get("/pesanan/catatan", RequirePermission("manage_nota_pesanan"), GetCatatanPesanan)
+	api.Get("/pesanan/riwayat", RequirePermission("view_riwayat_pesanan"), GetRiwayatPesanan)
+	api.Get("/pesanan/rangkuman-bulanan", RequirePermission("view_rangkuman_pesanan"), GetRangkumanPesanan)
 
 	// NOTA PESANAN (RUTE DINAMIS DENGAN :id WAJIB DI BAWAH)
-	api.Post("/pesanan", RequireRole(RoleSuperadmin), CreateNotaPesanan)
-	api.Get("/pesanan/:id", RequireRole(RoleSuperadmin, RoleSales), GetNotaPesananByID)
-	api.Post("/pesanan/:id", RequireRole(RoleSuperadmin), UpdateNotaPesanan)
-	api.Put("/pesanan/:id/batal", RequireRole(RoleSuperadmin), BatalkanPesanan)
-	api.Put("/pesanan/:id/pulihkan", RequireRole(RoleSuperadmin), PulihkanPesanan)
+	api.Post("/pesanan", RequirePermission("manage_nota_pesanan"), CreateNotaPesanan)
+	api.Get("/pesanan/:id", RequirePermissionAny("manage_nota_pesanan", "view_riwayat_pesanan"), GetNotaPesananByID)
+	api.Post("/pesanan/:id", RequirePermission("manage_nota_pesanan"), UpdateNotaPesanan)
+	api.Put("/pesanan/:id/batal", RequirePermission("manage_nota_pesanan"), BatalkanPesanan)
+	api.Put("/pesanan/:id/pulihkan", RequirePermission("manage_nota_pesanan"), PulihkanPesanan)
 
 	// DASHBOARD KUNJUNGAN SALES
-	api.Get("/sales/dashboard", RequireRole(RoleSuperadmin, RoleSales), GetDashboardSales)
-	api.Get("/sales/kunjungan/:toko_id", RequireRole(RoleSuperadmin, RoleSales), GetKunjunganToko)
+	api.Get("/sales/dashboard", RequirePermission("view_dashboard_sales"), GetDashboardSales)
+	api.Get("/sales/kunjungan/:toko_id", RequirePermission("view_dashboard_sales"), GetKunjunganToko)
 
 	// ANALISIS ASET & PERTUMBUHAN
-	api.Get("/aset/live", RequireRole(RoleSuperadmin), GetAnalisisAsetLive)
-	api.Post("/aset/snapshot", RequireRole(RoleSuperadmin), SimpanSnapshotAset)
-	api.Get("/aset/riwayat", RequireRole(RoleSuperadmin), GetRiwayatAset)
+	api.Get("/aset/live", RequirePermission("view_analisis_aset"), GetAnalisisAsetLive)
+	api.Post("/aset/snapshot", RequirePermission("view_analisis_aset"), SimpanSnapshotAset)
+	api.Get("/aset/riwayat", RequirePermission("view_analisis_aset"), GetRiwayatAset)
 
 	appPort := os.Getenv("PORT")
 	if appPort == "" {

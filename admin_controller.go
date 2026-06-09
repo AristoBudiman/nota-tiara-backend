@@ -20,14 +20,14 @@ func CreateAdmin(c *fiber.Ctx) error {
 	var input struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
-		Role     string `json:"role"`
+		RoleID   uint   `json:"role_id"`
 	}
 
 	if err := c.BodyParser(&input); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Format data salah"})
 	}
 
-	if input.Username == "" || input.Password == "" || input.Role == "" {
+	if input.Username == "" || input.Password == "" || input.RoleID == 0 {
 		return c.Status(400).JSON(fiber.Map{"error": "Username, password, dan role wajib diisi"})
 	}
 
@@ -45,7 +45,7 @@ func CreateAdmin(c *fiber.Ctx) error {
 	admin := models.Admin{
 		Username: input.Username,
 		Password: string(hashedPassword),
-		Role:     input.Role,
+		RoleID:   input.RoleID,
 	}
 
 	if err := DB.Create(&admin).Error; err != nil {
@@ -71,7 +71,7 @@ func UpdateAdmin(c *fiber.Ctx) error {
 	var input struct {
 		Username string `json:"username"`
 		Password string `json:"password"` // Opsional
-		Role     string `json:"role"`
+		RoleID   uint   `json:"role_id"`
 	}
 
 	if err := c.BodyParser(&input); err != nil {
@@ -79,7 +79,7 @@ func UpdateAdmin(c *fiber.Ctx) error {
 	}
 
 	var admin models.Admin
-	if err := DB.First(&admin, id).Error; err != nil {
+	if err := DB.Preload("Role").First(&admin, id).Error; err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "Akun tidak ditemukan"})
 	}
 
@@ -91,13 +91,13 @@ func UpdateAdmin(c *fiber.Ctx) error {
 
 	// Proteksi: Superadmin tidak boleh mengubah / menurunkan rolenya sendiri
 	currentUserID := c.Locals("admin_id").(uint)
-	if admin.ID == currentUserID && input.Role != admin.Role {
-		return c.Status(400).JSON(fiber.Map{"error": "Superadmin tidak boleh mengubah rolenya sendiri!"})
+	if admin.ID == currentUserID && input.RoleID != admin.RoleID {
+		return c.Status(400).JSON(fiber.Map{"error": "Anda tidak boleh mengubah role Anda sendiri!"})
 	}
 
 	// Update field
 	admin.Username = input.Username
-	admin.Role = input.Role
+	admin.RoleID = input.RoleID
 
 	if input.Password != "" {
 		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
@@ -131,12 +131,12 @@ func DeleteAdmin(c *fiber.Ctx) error {
 	currentUserID := c.Locals("admin_id").(uint)
 	
 	var admin models.Admin
-	if err := DB.First(&admin, id).Error; err != nil {
+	if err := DB.Preload("Role").First(&admin, id).Error; err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "Akun tidak ditemukan"})
 	}
 
-	if admin.Role == "superadmin" {
-		return c.Status(400).JSON(fiber.Map{"error": "Akun superadmin tidak boleh dihapus melalui aplikasi!"})
+	if admin.Role.NamaRole == "Superadmin" {
+		return c.Status(400).JSON(fiber.Map{"error": "Akun dengan role Superadmin tidak boleh dihapus melalui aplikasi!"})
 	}
 
 	if admin.ID == currentUserID {
@@ -162,13 +162,13 @@ func DeleteAdmin(c *fiber.Ctx) error {
 func GetProfile(c *fiber.Ctx) error {
 	currentUserID := c.Locals("admin_id").(uint)
 	var admin models.Admin
-	if err := DB.First(&admin, currentUserID).Error; err != nil {
+	if err := DB.Preload("Role").First(&admin, currentUserID).Error; err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "User tidak ditemukan"})
 	}
 
 	return c.JSON(fiber.Map{
 		"username": admin.Username,
-		"role":     admin.Role,
+		"role":     admin.Role.NamaRole,
 	})
 }
 

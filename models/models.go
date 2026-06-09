@@ -106,11 +106,29 @@ type NotaDetail struct {
 	HargaRetur  float64 `gorm:"default:0"` // BanyakRetur * HargaJual
 }
 
+type Role struct {
+	ID          uint         `gorm:"primaryKey" json:"id"`
+	NamaRole    string       `gorm:"unique;not null" json:"nama_role"`
+	Deskripsi   string       `json:"deskripsi"`
+	Permissions []Permission `gorm:"many2many:role_permissions;" json:"permissions"`
+}
+
+type Permission struct {
+	ID        uint   `gorm:"primaryKey" json:"id"`
+	Kode      string `gorm:"unique;not null" json:"kode"`
+	NamaIzin  string `json:"nama_izin"`
+}
+
 type Admin struct {
-	ID       uint   `gorm:"primaryKey"`
-	Username string `gorm:"unique;not null"`
-	Password string `gorm:"not null"`
-	Role     string `gorm:"default:'superadmin'"`
+	ID       uint   `gorm:"primaryKey" json:"id"`
+	Username string `gorm:"unique;not null" json:"username"`
+	Password string `gorm:"not null" json:"-"`
+
+	// Legacy column untuk keperluan auto-migrate
+	LegacyRole string `gorm:"column:role" json:"-"`
+
+	RoleID uint `gorm:"default:1" json:"role_id"`
+	Role   Role `gorm:"foreignKey:RoleID" json:"role"`
 }
 
 type RekapToko struct {
