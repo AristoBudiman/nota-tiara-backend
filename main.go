@@ -313,14 +313,21 @@ func main() {
 	// Kelompokkan rute yang butuh login
 	api := app.Group("/api", Protected)
 
+	// Profil (Dapat diakses oleh semua Role yang sudah login)
+	api.Get("/profile", GetProfile)
+	api.Put("/profile", UpdateProfile)
+
 	api.Get("/admins", RequireRole(RoleSuperadmin, RoleSales), func(c *fiber.Ctx) error {
 		var admins []models.Admin
-		// Ambil semua admin, lalu kirim ke Vue
-		if err := DB.Find(&admins).Error; err != nil {
+		// Ambil semua admin, lalu kirim ke Vue (Sembunyikan Password)
+		if err := DB.Select("id, username, role").Find(&admins).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 		return c.JSON(admins)
 	})
+	api.Post("/admins", RequireRole(RoleSuperadmin), CreateAdmin)
+	api.Put("/admins/:id", RequireRole(RoleSuperadmin), UpdateAdmin)
+	api.Delete("/admins/:id", RequireRole(RoleSuperadmin), DeleteAdmin)
 
 	// BAHAN
 	api.Get("/bahan", RequireRole(RoleSuperadmin), GetBahan)
