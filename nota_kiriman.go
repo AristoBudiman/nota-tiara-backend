@@ -87,6 +87,15 @@ func CreateNota(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Format data salah"})
 	}
 
+	if input.TotalDiskon < 0 || input.TotalVoucher < 0 {
+		return c.Status(400).JSON(fiber.Map{"error": "Diskon atau voucher tidak boleh minus."})
+	}
+	for _, d := range input.Details {
+		if d.BanyakKirim <= 0 {
+			return c.Status(400).JSON(fiber.Map{"error": "Kuantitas barang kirim harus lebih besar dari 0."})
+		}
+	}
+
 	var toko models.Toko
 	if err := DB.First(&toko, input.TokoID).Error; err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "Toko tidak ditemukan"})
@@ -229,6 +238,15 @@ func UpdateNota(c *fiber.Ctx) error {
 
 	if err := c.BodyParser(&input); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	if input.TotalDiskon < 0 || input.TotalVoucher < 0 {
+		return c.Status(400).JSON(fiber.Map{"error": "Diskon atau voucher tidak boleh minus."})
+	}
+	for _, d := range input.Details {
+		if d.BanyakKirim <= 0 || d.BanyakRetur < 0 || d.HargaJual < 0 {
+			return c.Status(400).JSON(fiber.Map{"error": "Detail barang tidak valid. Kuantitas kirim harus > 0, retur dan harga tidak boleh minus."})
+		}
 	}
 
 	tglBaru, errDate := time.Parse("2006-01-02", input.TanggalKirim)

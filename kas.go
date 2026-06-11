@@ -56,6 +56,10 @@ func CreateKas(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Format data salah"})
 	}
 
+	if input.Nominal <= 0 {
+		return c.Status(400).JSON(fiber.Map{"error": "Nominal kas tidak valid. Harus lebih besar dari 0."})
+	}
+
 	tgl, _ := time.Parse("2006-01-02", input.Tanggal)
 	sekarang := wib()
 	if tgl.Format("2006-01-02") == sekarang.Format("2006-01-02") {

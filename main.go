@@ -10,6 +10,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/gofiber/swagger"
 	"github.com/golang-jwt/jwt/v4"
@@ -382,7 +383,17 @@ func main() {
 		log.Println("⚠️ SWAGGER AKTIF: http://localhost:3000/swagger/index.html")
 	}
 
-	app.Post("/login", LoginAdmin) // Endpoint Publik (Bisa diakses tanpa token)
+	// Limitasi Login (Maks 5 per menit)
+	loginLimiter := limiter.New(limiter.Config{
+		Max:        5,
+		Expiration: 1 * time.Minute,
+		LimitReached: func(c *fiber.Ctx) error {
+			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
+				"error": "Terlalu banyak percobaan login. Silakan tunggu 1 menit.",
+			})
+		},
+	})
+	app.Post("/login", loginLimiter, LoginAdmin) // Endpoint Publik (Bisa diakses tanpa token)
 
 	// Kelompokkan rute yang butuh login
 	api := app.Group("/api", Protected)

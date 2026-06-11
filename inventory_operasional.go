@@ -77,6 +77,12 @@ func CreatePembelianBahan(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Format data salah"})
 	}
 
+	for _, d := range input.Details {
+		if d.Qty <= 0 || d.HargaBeliSatuan < 0 {
+			return c.Status(400).JSON(fiber.Map{"error": "Kuantitas atau harga beli tidak valid. Tidak boleh minus atau nol."})
+		}
+	}
+
 	tgl, _ := time.Parse("2006-01-02", input.Tanggal)
 	tx := DB.Begin()
 
@@ -350,6 +356,10 @@ func CreateProduksiMasak(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Format data salah"})
 	}
 
+	if input.JumlahBatch <= 0 {
+		return c.Status(400).JSON(fiber.Map{"error": "Jumlah batch tidak valid. Harus lebih besar dari 0."})
+	}
+
 	tgl, _ := time.Parse("2006-01-02", input.Tanggal)
 
 	// Gunakan Transaction agar kalau gagal potong stok, data masak dibatalkan
@@ -471,6 +481,10 @@ func CreateProduksiMatang(c *fiber.Ctx) error {
 	}
 	if err := c.BodyParser(&input); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Format data salah"})
+	}
+
+	if input.QtyMatang <= 0 {
+		return c.Status(400).JSON(fiber.Map{"error": "Kuantitas matang tidak valid. Harus lebih besar dari 0."})
 	}
 
 	tgl, _ := time.Parse("2006-01-02", input.Tanggal)
@@ -622,6 +636,10 @@ func CreateBarangRusak(c *fiber.Ctx) error {
 	}
 	if err := c.BodyParser(&input); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Format salah"})
+	}
+
+	if input.Qty <= 0 {
+		return c.Status(400).JSON(fiber.Map{"error": "Kuantitas tidak valid. Harus lebih besar dari 0."})
 	}
 
 	tgl, _ := time.Parse("2006-01-02", input.Tanggal)
@@ -1007,6 +1025,10 @@ func CreateOpname(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Format data salah"})
 	}
 
+	if input.StokFisik < 0 {
+		return c.Status(400).JSON(fiber.Map{"error": "Stok fisik tidak valid. Tidak boleh minus."})
+	}
+
 	tx := DB.Begin()
 	var bahan models.Bahan
 	if err := tx.First(&bahan, input.BahanID).Error; err != nil {
@@ -1072,6 +1094,15 @@ func CreateKonversiBahan(c *fiber.Ctx) error {
 
 	if err := c.BodyParser(&input); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	if input.QtyAsal <= 0 {
+		return c.Status(400).JSON(fiber.Map{"error": "Kuantitas asal tidak valid. Harus lebih besar dari 0."})
+	}
+	for _, d := range input.Details {
+		if d.QtyHasil <= 0 {
+			return c.Status(400).JSON(fiber.Map{"error": "Kuantitas hasil tidak valid. Harus lebih besar dari 0."})
+		}
 	}
 
 	tanggal, _ := time.Parse("2006-01-02", input.Tanggal)

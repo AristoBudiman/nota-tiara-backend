@@ -115,6 +115,15 @@ func CreateNotaPesanan(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Format data salah"})
 	}
 
+	if input.UangMuka < 0 || input.Ongkir < 0 || input.TotalVoucher < 0 {
+		return c.Status(400).JSON(fiber.Map{"error": "Nominal uang muka, ongkir, atau voucher tidak boleh minus."})
+	}
+	for _, d := range input.Details {
+		if d.Banyak <= 0 || d.HargaJual < 0 || d.Gramasi < 0 {
+			return c.Status(400).JSON(fiber.Map{"error": "Detail barang tidak valid. Kuantitas harus lebih dari 0, dan harga tidak boleh minus."})
+		}
+	}
+
 	tgl, _ := time.Parse("2006-01-02", input.TanggalKirim)
 	adminID := c.Locals("admin_id").(uint)
 
@@ -271,6 +280,15 @@ func UpdateNotaPesanan(c *fiber.Ctx) error {
 
 	if err := c.BodyParser(&input); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Format data salah"})
+	}
+
+	if input.UangMuka < 0 || input.Ongkir < 0 || input.TotalVoucher < 0 {
+		return c.Status(400).JSON(fiber.Map{"error": "Nominal uang muka, ongkir, atau voucher tidak boleh minus."})
+	}
+	for _, d := range input.Details {
+		if d.Banyak <= 0 || d.HargaJual < 0 || d.Gramasi < 0 {
+			return c.Status(400).JSON(fiber.Map{"error": "Detail barang tidak valid. Kuantitas harus lebih dari 0, dan harga tidak boleh minus."})
+		}
 	}
 
 	tgl, _ := time.Parse("2006-01-02", input.TanggalKirim)
