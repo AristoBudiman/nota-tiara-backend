@@ -5,7 +5,30 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"gorm.io/gorm"
 )
+
+// ==========================================
+// HELPER SALDO KAS MASTER
+// ==========================================
+
+func TambahSaldoKas(tx *gorm.DB, nominal float64) error {
+	var master models.MasterKas
+	if err := tx.First(&master, 1).Error; err != nil {
+		master = models.MasterKas{ID: 1, Saldo: nominal}
+		return tx.Create(&master).Error
+	}
+	return tx.Model(&master).UpdateColumn("saldo", gorm.Expr("saldo + ?", nominal)).Error
+}
+
+func KurangiSaldoKas(tx *gorm.DB, nominal float64) error {
+	var master models.MasterKas
+	if err := tx.First(&master, 1).Error; err != nil {
+		master = models.MasterKas{ID: 1, Saldo: -nominal}
+		return tx.Create(&master).Error
+	}
+	return tx.Model(&master).UpdateColumn("saldo", gorm.Expr("saldo - ?", nominal)).Error
+}
 
 // 1. Tarik Data Kas (Bisa difilter per bulan/kategori nanti di Vue)
 //
@@ -21,8 +44,16 @@ import (
 // @Router /api/kas [get]
 func GetKas(c *fiber.Ctx) error {
 	var kas []models.TransaksiKas
-	// Urutkan dari yang terbaru (tanggal terbaru, inputan terakhir)
-	if err := DB.Order("tanggal desc, id desc").Find(&kas).Error; err != nil {
+	startDate := c.Query("start_date")
+	endDate := c.Query("end_date")
+
+	query := DB.Order("tanggal desc, id desc")
+
+	if startDate != "" && endDate != "" {
+		query = query.Where("DATE(tanggal) >= ? AND DATE(tanggal) <= ?", startDate, endDate)
+	}
+
+	if err := query.Find(&kas).Error; err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.JSON(kas)
@@ -81,9 +112,19 @@ func CreateKas(c *fiber.Ctx) error {
 		CreatedBy:  adminID,
 	}
 
-	if err := DB.Create(&kas).Error; err != nil {
+	tx := DB.Begin()
+	if err := tx.Create(&kas).Error; err != nil {
+		tx.Rollback()
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
+
+	// Update Saldo Master
+	if kas.Jenis == "MASUK" {
+		TambahSaldoKas(tx, kas.Nominal)
+	} else {
+		KurangiSaldoKas(tx, kas.Nominal)
+	}
+	tx.Commit()
 
 	return c.JSON(fiber.Map{"message": "Transaksi kas berhasil dicatat!", "id": kas.ID})
 }
@@ -103,9 +144,28 @@ func CreateKas(c *fiber.Ctx) error {
 // @Router /api/kas/{id} [delete]
 func DeleteKas(c *fiber.Ctx) error {
 	id := c.Params("id")
-	if err := DB.Delete(&models.TransaksiKas{}, id).Error; err != nil {
+	tx := DB.Begin()
+
+	// Find dulu untuk mengembalikan saldo
+	var kas models.TransaksiKas
+	if err := tx.First(&kas, id).Error; err != nil {
+		tx.Rollback()
+		return c.Status(404).JSON(fiber.Map{"error": "Transaksi kas tidak ditemukan"})
+	}
+
+	// Reverse (Kembalikan Saldo)
+	if kas.Jenis == "MASUK" {
+		KurangiSaldoKas(tx, kas.Nominal)
+	} else {
+		TambahSaldoKas(tx, kas.Nominal)
+	}
+
+	if err := tx.Delete(&kas).Error; err != nil {
+		tx.Rollback()
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
+
+	tx.Commit()
 	return c.JSON(fiber.Map{"message": "Transaksi kas berhasil dihapus!"})
 }
 
@@ -192,10 +252,19 @@ func GetAnalisisAsetLive(c *fiber.Ctx) error {
 	}
 
 	// 1. TOTAL KAS (Sampai tanggal target)
-	var totalMasuk, totalKeluar float64
-	DB.Model(&models.TransaksiKas{}).Where("jenis = 'MASUK' AND DATE(tanggal) <= ?", targetDate).Select("COALESCE(SUM(nominal), 0)").Row().Scan(&totalMasuk)
-	DB.Model(&models.TransaksiKas{}).Where("jenis = 'KELUAR' AND DATE(tanggal) <= ?", targetDate).Select("COALESCE(SUM(nominal), 0)").Row().Scan(&totalKeluar)
-	kasLive := totalMasuk - totalKeluar
+	var kasLive float64
+	var master models.MasterKas
+	DB.First(&master, 1)
+	kasLive = master.Saldo
+
+	hariIni := wib().Format("2006-01-02")
+	if targetDate != hariIni {
+		// Hitung mundur: Kas Dulu = Kas Sekarang - Masuk (Baru) + Keluar (Baru)
+		var totalMasukBaru, totalKeluarBaru float64
+		DB.Model(&models.TransaksiKas{}).Where("jenis = 'MASUK' AND DATE(tanggal) > ? AND DATE(tanggal) <= ?", targetDate, hariIni).Select("COALESCE(SUM(nominal), 0)").Row().Scan(&totalMasukBaru)
+		DB.Model(&models.TransaksiKas{}).Where("jenis = 'KELUAR' AND DATE(tanggal) > ? AND DATE(tanggal) <= ?", targetDate, hariIni).Select("COALESCE(SUM(nominal), 0)").Row().Scan(&totalKeluarBaru)
+		kasLive = kasLive - totalMasukBaru + totalKeluarBaru
+	}
 
 	// 2. TOTAL PIUTANG (Masih hutang dan dibuat sebelum/pada tanggal target)
 	var piutangReguler, piutangPO float64
@@ -312,6 +381,15 @@ func SimpanSnapshotAset(c *fiber.Ctx) error {
 // @Router /api/aset/riwayat [get]
 func GetRiwayatAset(c *fiber.Ctx) error {
 	var riwayat []models.AsetSnapshot
-	DB.Order("bulan desc").Find(&riwayat)
+	startDate := c.Query("start_date")
+	endDate := c.Query("end_date")
+
+	query := DB.Order("bulan desc")
+
+	if startDate != "" && endDate != "" {
+		query = query.Where("DATE(bulan) >= ? AND DATE(bulan) <= ?", startDate, endDate)
+	}
+
+	query.Find(&riwayat)
 	return c.JSON(riwayat)
 }

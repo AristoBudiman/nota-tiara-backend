@@ -105,6 +105,7 @@ func connectDB() {
 		&models.BarangKomposit{},
 		&models.KonversiBahan{},
 		&models.KonversiBahanDetail{},
+		&models.MasterKas{},
 	)
 	log.Println("Database & Tabel Berhasil Disiapkan! 🏗️")
 

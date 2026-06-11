@@ -191,7 +191,9 @@ func CreateNotaPesanan(c *fiber.Ctx) error {
 	pesanan.TotalVoucher = input.TotalVoucher
 	pesanan.SisaTagihan = totalBayar + input.Ongkir - input.UangMuka - input.TotalVoucher
 
-	if err := DB.Create(&pesanan).Error; err != nil {
+	tx := DB.Begin()
+	if err := tx.Create(&pesanan).Error; err != nil {
+		tx.Rollback()
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 
@@ -199,13 +201,13 @@ func CreateNotaPesanan(c *fiber.Ctx) error {
 	// FULL SYNC KAS: CREATE PO BARU
 	// ==========================================
 	var settingKas models.PengaturanSistem
-	DB.Where("key = ?", "ENABLE_KAS_SYNC").First(&settingKas)
+	tx.Where("key = ?", "ENABLE_KAS_SYNC").First(&settingKas)
 
 	if settingKas.Value == "true" {
 
 		// 1. Catat DP Jika Ada
 		if pesanan.UangMuka > 0 {
-			DB.Create(&models.TransaksiKas{
+			tx.Create(&models.TransaksiKas{
 				Tanggal:    wib(),
 				Kategori:   "PESANAN",
 				Jenis:      "MASUK",
@@ -214,11 +216,12 @@ func CreateNotaPesanan(c *fiber.Ctx) error {
 				NoNotaRef:  pesanan.NoNota,
 				CreatedBy:  adminID,
 			})
+			TambahSaldoKas(tx, pesanan.UangMuka)
 		}
 
 		// 2. Catat Pelunasan Sisa PO jika langsung dilunasi
 		if pesanan.IsLunas && pesanan.SisaTagihan > 0 {
-			DB.Create(&models.TransaksiKas{
+			tx.Create(&models.TransaksiKas{
 				Tanggal:    wib(),
 				Kategori:   "PESANAN",
 				Jenis:      "MASUK",
@@ -227,9 +230,11 @@ func CreateNotaPesanan(c *fiber.Ctx) error {
 				NoNotaRef:  pesanan.NoNota,
 				CreatedBy:  adminID,
 			})
+			TambahSaldoKas(tx, pesanan.SisaTagihan)
 		}
 	}
 
+	tx.Commit()
 	return c.JSON(fiber.Map{"message": "Pesanan berhasil dibuat!", "id": pesanan.ID})
 }
 
@@ -420,16 +425,20 @@ func UpdateNotaPesanan(c *fiber.Ctx) error {
 		if input.UangMuka > 0 {
 			ketDP := fmt.Sprintf("DP Pesanan - %s (Pemesan: %s)", poLama.NoNota, input.NamaPemesan)
 			if errDP == nil {
+				selisih := input.UangMuka - kasDP.Nominal
 				DB.Model(&kasDP).Updates(map[string]interface{}{"nominal": input.UangMuka, "keterangan": ketDP})
+				TambahSaldoKas(DB, selisih)
 			} else {
 				DB.Create(&models.TransaksiKas{
 					Tanggal: wib(), Kategori: "PESANAN", Jenis: "MASUK",
 					Nominal: input.UangMuka, Keterangan: ketDP, NoNotaRef: poLama.NoNota, CreatedBy: adminID,
 				})
+				TambahSaldoKas(DB, input.UangMuka)
 			}
 		} else { // Jika DP di-nol-kan, hapus kas DP
 			if errDP == nil {
 				DB.Unscoped().Delete(&kasDP)
+				KurangiSaldoKas(DB, kasDP.Nominal)
 			}
 		}
 
@@ -440,16 +449,20 @@ func UpdateNotaPesanan(c *fiber.Ctx) error {
 		if input.IsLunas && sisaTagihan > 0 {
 			ketSisa := fmt.Sprintf("Pelunasan Sisa PO - %s (Pemesan: %s)", poLama.NoNota, input.NamaPemesan)
 			if errSisa == nil {
+				selisih := sisaTagihan - kasSisa.Nominal
 				DB.Model(&kasSisa).Updates(map[string]interface{}{"nominal": sisaTagihan, "keterangan": ketSisa})
+				TambahSaldoKas(DB, selisih)
 			} else {
 				DB.Create(&models.TransaksiKas{
 					Tanggal: wib(), Kategori: "PESANAN", Jenis: "MASUK",
 					Nominal: sisaTagihan, Keterangan: ketSisa, NoNotaRef: poLama.NoNota, CreatedBy: adminID,
 				})
+				TambahSaldoKas(DB, sisaTagihan)
 			}
 		} else { // Jika Batal Lunas (atau Sisa Tagihan jadi 0), hapus kas pelunasan
 			if errSisa == nil {
 				DB.Unscoped().Delete(&kasSisa)
+				KurangiSaldoKas(DB, kasSisa.Nominal)
 			}
 		}
 	}
@@ -529,6 +542,11 @@ func BatalkanPesanan(c *fiber.Ctx) error {
 	}
 
 	// 2. Tarik uang DP dan Pelunasan dari Brankas
+	var kasList []models.TransaksiKas
+	tx.Where("no_nota_ref = ?", pesanan.NoNota).Find(&kasList)
+	for _, k := range kasList {
+		KurangiSaldoKas(tx, k.Nominal)
+	}
 	tx.Unscoped().Where("no_nota_ref = ?", pesanan.NoNota).Delete(&models.TransaksiKas{})
 
 	tx.Commit()
@@ -581,6 +599,7 @@ func PulihkanPesanan(c *fiber.Ctx) error {
 				NoNotaRef:  pesanan.NoNota,
 				CreatedBy:  adminID,
 			})
+			TambahSaldoKas(tx, pesanan.UangMuka)
 		}
 
 		if pesanan.IsLunas && pesanan.SisaTagihan > 0 {
@@ -593,6 +612,7 @@ func PulihkanPesanan(c *fiber.Ctx) error {
 				NoNotaRef:  pesanan.NoNota,
 				CreatedBy:  adminID,
 			})
+			TambahSaldoKas(tx, pesanan.SisaTagihan)
 		}
 	}
 

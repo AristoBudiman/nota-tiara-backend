@@ -400,6 +400,11 @@ type PengaturanSistem struct {
 	Value string `gorm:"not null"`        // Contoh: "true" atau "false"
 }
 
+type MasterKas struct {
+	ID    uint    `gorm:"primaryKey"`
+	Saldo float64 `gorm:"not null;default:0"`
+}
+
 type AsetSnapshot struct {
 	ID              uint      `gorm:"primaryKey" json:"id"`
 	Bulan           time.Time `gorm:"type:date;unique;not null" json:"bulan"` // Contoh: 2026-05-01

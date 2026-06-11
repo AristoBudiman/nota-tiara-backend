@@ -146,6 +146,7 @@ func CreatePembelianBahan(c *fiber.Ctx) error {
 			tx.Rollback()
 			return c.Status(500).JSON(fiber.Map{"error": "Gagal memotong uang kas"})
 		}
+		KurangiSaldoKas(tx, grandTotal)
 	}
 
 	tx.Commit()
@@ -211,9 +212,15 @@ func UpdateStatusPembelian(c *fiber.Ctx) error {
 					NoNotaRef:  noNotaRefBeli,
 					CreatedBy:  adminID,
 				})
+				KurangiSaldoKas(tx, p.TotalBiaya)
 			}
 		} else {
-			tx.Unscoped().Where("no_nota_ref = ?", noNotaRefBeli).Delete(&models.TransaksiKas{})
+			var kas models.TransaksiKas
+			res := tx.Where("no_nota_ref = ?", noNotaRefBeli).First(&kas)
+			if res.Error == nil {
+				TambahSaldoKas(tx, kas.Nominal)
+				tx.Unscoped().Delete(&kas)
+			}
 		}
 	}
 
@@ -258,6 +265,11 @@ func DeletePembelianBahan(c *fiber.Ctx) error {
 	tx.Where("key = ?", "ENABLE_KAS_SYNC").First(&settingKas)
 	if settingKas.Value == "true" && p.IsLunas {
 		noNotaRefBeli := fmt.Sprintf("BELI-%d", p.ID)
+		var kasList []models.TransaksiKas
+		tx.Where("no_nota_ref = ?", noNotaRefBeli).Find(&kasList)
+		for _, k := range kasList {
+			TambahSaldoKas(tx, k.Nominal) // Kembalikan uang
+		}
 		tx.Unscoped().Where("no_nota_ref = ?", noNotaRefBeli).Delete(&models.TransaksiKas{})
 	}
 
@@ -306,6 +318,7 @@ func RestorePembelianBahan(c *fiber.Ctx) error {
 			NoNotaRef:  fmt.Sprintf("BELI-%d", p.ID),
 			CreatedBy:  adminID,
 		})
+		KurangiSaldoKas(tx, p.TotalBiaya)
 	}
 
 	tx.Commit()
@@ -1068,7 +1081,16 @@ func CreateOpname(c *fiber.Ctx) error {
 // @Router /api/inventory/pecah-barang [get]
 func GetKonversiBahan(c *fiber.Ctx) error {
 	var riwayat []models.KonversiBahan
-	DB.Preload("BahanAsal").Preload("Details.BahanHasil").Order("tanggal desc").Find(&riwayat)
+	startDate := c.Query("start_date")
+	endDate := c.Query("end_date")
+
+	query := DB.Preload("BahanAsal").Preload("Details.BahanHasil").Order("tanggal desc")
+
+	if startDate != "" && endDate != "" {
+		query = query.Where("DATE(tanggal) >= ? AND DATE(tanggal) <= ?", startDate, endDate)
+	}
+
+	query.Find(&riwayat)
 	return c.JSON(riwayat)
 }
 

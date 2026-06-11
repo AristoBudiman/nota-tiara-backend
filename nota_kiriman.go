@@ -181,7 +181,9 @@ func CreateNota(c *fiber.Ctx) error {
 	nota.JumlahKirim = totalKirim
 	nota.TotalBayar = totalKirim - input.TotalDiskon - input.TotalVoucher
 
-	if err := DB.Create(&nota).Error; err != nil {
+	tx := DB.Begin()
+	if err := tx.Create(&nota).Error; err != nil {
+		tx.Rollback()
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 
@@ -189,10 +191,10 @@ func CreateNota(c *fiber.Ctx) error {
 	// FULL SYNC KAS: CREATE NOTA LUNAS
 	// ==========================================
 	var settingKas models.PengaturanSistem
-	DB.Where("key = ?", "ENABLE_KAS_SYNC").First(&settingKas)
+	tx.Where("key = ?", "ENABLE_KAS_SYNC").First(&settingKas)
 	if settingKas.Value == "true" {
 		if input.IsLunas {
-			DB.Create(&models.TransaksiKas{
+			tx.Create(&models.TransaksiKas{
 				Tanggal:    wib(),
 				Kategori:   "REGULER",
 				Jenis:      "MASUK",
@@ -201,8 +203,10 @@ func CreateNota(c *fiber.Ctx) error {
 				NoNotaRef:  nota.NoNota,
 				CreatedBy:  adminID,
 			})
+			TambahSaldoKas(tx, totalKirim)
 		}
 	}
+	tx.Commit()
 	return c.JSON(fiber.Map{"message": "Nota berhasil dibuat!", "id": nota.ID})
 }
 
@@ -344,11 +348,13 @@ func UpdateNota(c *fiber.Ctx) error {
 
 			// Ganti pengecekan errKas menjadi pengecekan jumlah baris
 			if result.RowsAffected > 0 {
+				selisih := totalBayarAkhir - kasReguler.Nominal
 				// Sudah ada kasnya, UPDATE nominalnya (Bisa jadi ada tambahan retur/diskon)
 				DB.Model(&kasReguler).Updates(map[string]interface{}{
 					"nominal":    totalBayarAkhir,
 					"keterangan": ket,
 				})
+				TambahSaldoKas(DB, selisih)
 			} else {
 				// Belum ada, CREATE kas masuk
 				DB.Create(&models.TransaksiKas{
@@ -360,11 +366,13 @@ func UpdateNota(c *fiber.Ctx) error {
 					NoNotaRef:  notaLama.NoNota,
 					CreatedBy:  adminID,
 				})
+				TambahSaldoKas(DB, totalBayarAkhir)
 			}
 		} else {
 			// Jika TIDAK LUNAS (atau Batal Lunas), HAPUS KAS JIKA ADA!
 			if result.RowsAffected > 0 { // Ganti pengecekan errKas di sini juga
 				DB.Unscoped().Delete(&kasReguler)
+				KurangiSaldoKas(DB, kasReguler.Nominal)
 			}
 		}
 	}
@@ -401,6 +409,11 @@ func BatalkanNota(c *fiber.Ctx) error {
 	}
 
 	// 2. Tarik uang kembali dari Brankas (Otomatis hapus Kas)
+	var kasList []models.TransaksiKas
+	tx.Where("no_nota_ref = ?", nota.NoNota).Find(&kasList)
+	for _, k := range kasList {
+		KurangiSaldoKas(tx, k.Nominal)
+	}
 	tx.Unscoped().Where("no_nota_ref = ?", nota.NoNota).Delete(&models.TransaksiKas{})
 
 	tx.Commit()
@@ -450,6 +463,7 @@ func PulihkanNota(c *fiber.Ctx) error {
 			NoNotaRef:  nota.NoNota,
 			CreatedBy:  adminID,
 		})
+		TambahSaldoKas(tx, nota.TotalBayar)
 	}
 
 	tx.Commit()
