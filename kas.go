@@ -56,7 +56,14 @@ func GetKas(c *fiber.Ctx) error {
 	if err := query.Find(&kas).Error; err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	return c.JSON(kas)
+
+	var master models.MasterKas
+	DB.First(&master, 1)
+
+	return c.JSON(fiber.Map{
+		"saldo_saat_ini": master.Saldo,
+		"riwayat":        kas,
+	})
 }
 
 // 2. Input Kas Manual (Untuk Kategori RUMAH_TANGGA atau Setoran)
