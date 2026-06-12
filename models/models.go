@@ -122,7 +122,12 @@ type Permission struct {
 type Admin struct {
 	ID       uint   `gorm:"primaryKey" json:"id"`
 	Username string `gorm:"unique;not null" json:"username"`
-	Password string `gorm:"not null" json:"-"`
+	Password string `json:"-"`
+	Email    string `gorm:"unique" json:"email"`
+
+	// Security & Honeypot fields
+	FailedLoginAttempts int        `gorm:"default:0" json:"-"`
+	LockedUntil         *time.Time `json:"-"`
 
 	// Legacy column untuk keperluan auto-migrate
 	LegacyRole string `gorm:"column:role" json:"-"`

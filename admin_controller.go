@@ -1,6 +1,9 @@
 package main
 
 import (
+	"fmt"
+	"time"
+
 	"backend/models"
 	"github.com/gofiber/fiber/v2"
 	"golang.org/x/crypto/bcrypt"
@@ -20,6 +23,7 @@ func CreateAdmin(c *fiber.Ctx) error {
 	var input struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
+		Email    string `json:"email"`
 		RoleID   uint   `json:"role_id"`
 	}
 
@@ -27,8 +31,15 @@ func CreateAdmin(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Format data salah"})
 	}
 
-	if input.Username == "" || input.Password == "" || input.RoleID == 0 {
-		return c.Status(400).JSON(fiber.Map{"error": "Username, password, dan role wajib diisi"})
+	if input.RoleID == 0 || (input.Email == "" && input.Username == "") {
+		return c.Status(400).JSON(fiber.Map{"error": "Minimal Email ATAU Username harus diisi, serta Role wajib dipilih"})
+	}
+
+	if input.Username == "" {
+		input.Username = fmt.Sprintf("google_user_%d", time.Now().UnixNano())
+	}
+	if input.Password == "" {
+		input.Password = fmt.Sprintf("rand_pass_%d", time.Now().UnixNano())
 	}
 
 	// Cek apakah username sudah ada
@@ -45,6 +56,7 @@ func CreateAdmin(c *fiber.Ctx) error {
 	admin := models.Admin{
 		Username: input.Username,
 		Password: string(hashedPassword),
+		Email:    input.Email,
 		RoleID:   input.RoleID,
 	}
 
@@ -71,6 +83,7 @@ func UpdateAdmin(c *fiber.Ctx) error {
 	var input struct {
 		Username string `json:"username"`
 		Password string `json:"password"` // Opsional
+		Email    string `json:"email"`    // Opsional
 		RoleID   uint   `json:"role_id"`
 	}
 
@@ -81,6 +94,10 @@ func UpdateAdmin(c *fiber.Ctx) error {
 	var admin models.Admin
 	if err := DB.Preload("Role").First(&admin, id).Error; err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "Akun tidak ditemukan"})
+	}
+
+	if input.Username == "" {
+		input.Username = admin.Username // Pertahankan username lama jika dikosongkan
 	}
 
 	// Cek username bentrok (opsional tapi baik)
@@ -98,6 +115,14 @@ func UpdateAdmin(c *fiber.Ctx) error {
 	// Update field
 	admin.Username = input.Username
 	admin.RoleID = input.RoleID
+	
+	if input.Email != "" {
+		admin.Email = input.Email
+	}
+
+	// Reset lockout status whenever superadmin updates the account (Manual Unlock)
+	admin.FailedLoginAttempts = 0
+	admin.LockedUntil = nil
 
 	if input.Password != "" {
 		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
@@ -168,6 +193,7 @@ func GetProfile(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{
 		"username": admin.Username,
+		"email":    admin.Email,
 		"role":     admin.Role.NamaRole,
 	})
 }

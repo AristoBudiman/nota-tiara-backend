@@ -2,8 +2,10 @@ package main
 
 import (
 	"backend/models"
+	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"time"
 	_ "time/tzdata" // Embed timezone database to the binary
@@ -190,12 +192,38 @@ func LoginAdmin(c *fiber.Ctx) error {
 
 	var admin models.Admin
 	if err := DB.Preload("Role").Preload("Role.Permissions").Where("username = ?", input.Username).First(&admin).Error; err != nil {
+		time.Sleep(1 * time.Second) // Honeypot delay
 		return c.Status(401).JSON(fiber.Map{"error": "Username atau Password salah"})
+	}
+
+	// BLOKIR LOGIN MANUAL JIKA AKUN ADALAH AKUN GOOGLE
+	if admin.Email != "" {
+		time.Sleep(1 * time.Second) // Delay jebakan
+		return c.Status(401).JSON(fiber.Map{"error": "Akun ini terdaftar sebagai akun Google. Silakan gunakan tombol Sign in with Google!"})
+	}
+
+	// Cek Lockout
+	if admin.LockedUntil != nil && admin.LockedUntil.After(time.Now()) {
+		return c.Status(403).JSON(fiber.Map{"error": "Akun terkunci karena banyak percobaan gagal. Hubungi Superadmin."})
 	}
 
 	// Cek Password Hash vs Password Input
 	if err := bcrypt.CompareHashAndPassword([]byte(admin.Password), []byte(input.Password)); err != nil {
+		admin.FailedLoginAttempts += 1
+		if admin.FailedLoginAttempts >= 5 {
+			lockTime := time.Now().Add(24 * time.Hour)
+			admin.LockedUntil = &lockTime
+		}
+		DB.Save(&admin)
+		time.Sleep(1 * time.Second) // Honeypot delay
 		return c.Status(401).JSON(fiber.Map{"error": "Username atau Password salah"})
+	}
+
+	// Reset Lockout jika sukses
+	if admin.FailedLoginAttempts > 0 || admin.LockedUntil != nil {
+		admin.FailedLoginAttempts = 0
+		admin.LockedUntil = nil
+		DB.Save(&admin)
 	}
 
 	// Ekstrak list permissions
@@ -219,6 +247,73 @@ func LoginAdmin(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{
 		"message":     "Login sukses",
+		"token":       tokenString,
+		"role":        admin.Role.NamaRole,
+		"permissions": perms,
+	})
+}
+
+// LoginGoogle godoc
+// @Summary Autentikasi User via Google Sign-In
+// @Description Endpoint untuk login menggunakan ID Token dari Google.
+// @Tags 01. Authentication
+// @Accept json
+// @Produce json
+// @Param payload body map[string]string true "Format JSON dengan key: token"
+// @Success 200 {object} map[string]interface{} "Login sukses beserta token"
+// @Failure 401 {object} map[string]interface{} "Akses Ditolak"
+// @Router /login/google [post]
+func LoginGoogle(c *fiber.Ctx) error {
+	var input struct {
+		Token string `json:"token"`
+	}
+
+	if err := c.BodyParser(&input); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Input tidak valid"})
+	}
+
+	// 1. Verifikasi Token ke Google
+	resp, err := http.Get("https://oauth2.googleapis.com/tokeninfo?id_token=" + input.Token)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		return c.Status(401).JSON(fiber.Map{"error": "Token Google tidak valid"})
+	}
+	defer resp.Body.Close()
+
+	var googleClaims struct {
+		Email string `json:"email"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&googleClaims); err != nil || googleClaims.Email == "" {
+		return c.Status(401).JSON(fiber.Map{"error": "Gagal membaca email dari Google"})
+	}
+
+	// 2. Cari Email di Database (Whitelist)
+	var admin models.Admin
+	if err := DB.Preload("Role").Preload("Role.Permissions").Where("email = ?", googleClaims.Email).First(&admin).Error; err != nil {
+		// Logika Bypass: Akun terkunci tidak masalah untuk Google Login!
+		return c.Status(401).JSON(fiber.Map{"error": "Akses Ditolak. Email Anda belum didaftarkan oleh Superadmin."})
+	}
+
+	// Ekstrak list permissions
+	var perms []string
+	for _, p := range admin.Role.Permissions {
+		perms = append(perms, p.Kode)
+	}
+
+	// Jika sukses, buat token JWT aplikasi kita
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"admin_id":    admin.ID,
+		"role":        admin.Role.NamaRole,
+		"permissions": perms,
+		"exp":         time.Now().Add(time.Hour * 24).Unix(),
+	})
+
+	tokenString, err := token.SignedString(jwtSecret)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Gagal membuat token"})
+	}
+
+	return c.JSON(fiber.Map{
+		"message":     "Login Google sukses",
 		"token":       tokenString,
 		"role":        admin.Role.NamaRole,
 		"permissions": perms,
@@ -394,7 +489,8 @@ func main() {
 			})
 		},
 	})
-	app.Post("/login", loginLimiter, LoginAdmin) // Endpoint Publik (Bisa diakses tanpa token)
+	app.Post("/login", loginLimiter, LoginAdmin) // Endpoint Publik (Honeypot/Fallback)
+	app.Post("/login/google", loginLimiter, LoginGoogle) // Endpoint Google Login
 
 	// Kelompokkan rute yang butuh login
 	api := app.Group("/api", Protected)
@@ -406,7 +502,7 @@ func main() {
 	api.Get("/admins", func(c *fiber.Ctx) error {
 		var admins []models.Admin
 		// Ambil semua admin, lalu kirim ke Vue (Sembunyikan Password)
-		if err := DB.Preload("Role").Select("id, username, role_id").Find(&admins).Error; err != nil {
+		if err := DB.Preload("Role").Select("id, username, email, role_id, failed_login_attempts, locked_until").Find(&admins).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 		return c.JSON(admins)
