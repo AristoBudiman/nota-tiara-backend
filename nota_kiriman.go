@@ -80,6 +80,7 @@ func CreateNota(c *fiber.Ctx) error {
 		Details      []struct {
 			BarangID    uint `json:"barang_id"`
 			BanyakKirim int  `json:"banyak_kirim"`
+			BanyakRetur int  `json:"banyak_retur"`
 		} `json:"details"`
 	}
 
@@ -91,8 +92,8 @@ func CreateNota(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Diskon atau voucher tidak boleh minus."})
 	}
 	for _, d := range input.Details {
-		if d.BanyakKirim <= 0 {
-			return c.Status(400).JSON(fiber.Map{"error": "Kuantitas barang kirim harus lebih besar dari 0."})
+		if d.BanyakKirim < 0 || d.BanyakRetur < 0 {
+			return c.Status(400).JSON(fiber.Map{"error": "Kuantitas barang kirim atau retur tidak boleh minus."})
 		}
 	}
 
@@ -162,24 +163,30 @@ func CreateNota(c *fiber.Ctx) error {
 	}
 
 	var totalKirim float64
+	var totalRetur float64
 	for _, d := range input.Details {
 		var barang models.Barang
 		if err := DB.First(&barang, d.BarangID).Error; err == nil {
-			subtotal := float64(d.BanyakKirim) * barang.HargaDefault
-			totalKirim += subtotal
+			subtotalKirim := float64(d.BanyakKirim) * barang.HargaDefault
+			subtotalRetur := float64(d.BanyakRetur) * barang.HargaDefault
+			totalKirim += subtotalKirim
+			totalRetur += subtotalRetur
 
 			nota.Details = append(nota.Details, models.NotaDetail{
 				BarangID:           d.BarangID,
 				NamaBarangSnapshot: barang.NamaBarang,
 				BanyakKirim:        d.BanyakKirim,
 				HargaJual:          barang.HargaDefault,
-				HargaKirim:         subtotal,
+				HargaKirim:         subtotalKirim,
+				BanyakRetur:        d.BanyakRetur,
+				HargaRetur:         subtotalRetur,
 			})
 		}
 	}
 
 	nota.JumlahKirim = totalKirim
-	nota.TotalBayar = totalKirim - input.TotalDiskon - input.TotalVoucher
+	nota.JumlahRetur = totalRetur
+	nota.TotalBayar = totalKirim - totalRetur - input.TotalDiskon - input.TotalVoucher
 
 	tx := DB.Begin()
 	if err := tx.Create(&nota).Error; err != nil {
@@ -198,12 +205,12 @@ func CreateNota(c *fiber.Ctx) error {
 				Tanggal:    wib(),
 				Kategori:   "REGULER",
 				Jenis:      "MASUK",
-				Nominal:    totalKirim,
+				Nominal:    nota.TotalBayar,
 				Keterangan: fmt.Sprintf("Pelunasan Reguler - %s (Toko: %s)", nota.NoNota, toko.NamaToko),
 				NoNotaRef:  nota.NoNota,
 				CreatedBy:  adminID,
 			})
-			TambahSaldoKas(tx, totalKirim)
+			TambahSaldoKas(tx, nota.TotalBayar)
 		}
 	}
 	tx.Commit()
@@ -248,8 +255,8 @@ func UpdateNota(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Diskon atau voucher tidak boleh minus."})
 	}
 	for _, d := range input.Details {
-		if d.BanyakKirim <= 0 || d.BanyakRetur < 0 || d.HargaJual < 0 {
-			return c.Status(400).JSON(fiber.Map{"error": "Detail barang tidak valid. Kuantitas kirim harus > 0, retur dan harga tidak boleh minus."})
+		if d.BanyakKirim < 0 || d.BanyakRetur < 0 || d.HargaJual < 0 {
+			return c.Status(400).JSON(fiber.Map{"error": "Detail barang tidak valid. Kuantitas kirim, retur dan harga tidak boleh minus."})
 		}
 	}
 
