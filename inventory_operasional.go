@@ -1011,7 +1011,7 @@ func GetOpname(c *fiber.Ctx) error {
 	endDate := c.Query("end")
 
 	if startDate != "" && endDate != "" {
-		query = query.Where("tanggal >= ? AND tanggal <= ?", startDate, endDate)
+		query = query.Where("tanggal >= ? AND tanggal <= ?", startDate+" 00:00:00", endDate+" 23:59:59")
 	}
 
 	query.Find(&opname)
