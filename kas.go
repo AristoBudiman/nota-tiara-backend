@@ -2,6 +2,7 @@ package main
 
 import (
 	"backend/models"
+	"fmt"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -323,6 +324,90 @@ func GetAnalisisAsetLive(c *fiber.Ctx) error {
 		"bulan_lalu":       snapshotLalu,
 		"tanggal_analisis": targetDate,
 		"awal_prive":       startDatePrive,
+	})
+}
+
+// GetRincianAset godoc
+// @Summary Daftar Rincian Piutang & Hutang
+// @Description Menarik daftar nota dan pembelian yang belum lunas pada tanggal target.
+// @Tags 15. Analisis & Aset
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param date query string false "Tanggal batas akhir (Format: YYYY-MM-DD)"
+// @Success 200 {object} map[string]interface{} "Data rincian aset"
+// @Router /api/aset/rincian [get]
+func GetRincianAset(c *fiber.Ctx) error {
+	targetDate := c.Query("date")
+	if targetDate == "" {
+		targetDate = wib().Format("2006-01-02")
+	}
+
+	type RincianItem struct {
+		Jenis        string  `json:"jenis"`
+		NoNota       string  `json:"no_nota"`
+		Mitra        string  `json:"mitra"`
+		Tanggal      string  `json:"tanggal"`
+		TanggalLunas string  `json:"tanggal_lunas,omitempty"`
+		Nominal      float64 `json:"nominal"`
+	}
+
+	var piutang []RincianItem
+	var hutang []RincianItem
+
+	// 1. Piutang Reguler
+	var notas []models.Nota
+	DB.Preload("Toko").Where("(is_lunas = false OR (is_lunas = true AND DATE(tanggal_lunas) > ?)) AND status != 'DIBATALKAN' AND tanggal_kirim <= ?", targetDate, targetDate).Find(&notas)
+	for _, n := range notas {
+		mitra := ""
+		if n.TokoID != 0 {
+			mitra = n.Toko.NamaToko
+		}
+		tglLunas := ""
+		if n.TanggalLunas != nil {
+			tglLunas = n.TanggalLunas.Format("2006-01-02")
+		}
+		piutang = append(piutang, RincianItem{
+			Jenis: "REGULER", NoNota: n.NoNota, Mitra: mitra, 
+			Tanggal: n.TanggalKirim.Format("2006-01-02"), TanggalLunas: tglLunas, Nominal: n.TotalBayar,
+		})
+	}
+
+	// 2. Piutang PO
+	var pos []models.NotaPesanan
+	DB.Preload("Toko").Where("(is_lunas = false OR (is_lunas = true AND DATE(tanggal_lunas) > ?)) AND status != 'DIBATALKAN' AND tanggal_kirim <= ?", targetDate, targetDate).Find(&pos)
+	for _, n := range pos {
+		mitra := n.NamaPemesan
+		if n.TokoID != nil && n.Toko.NamaToko != "" {
+			mitra = n.Toko.NamaToko
+		}
+		tglLunas := ""
+		if n.TanggalLunas != nil {
+			tglLunas = n.TanggalLunas.Format("2006-01-02")
+		}
+		piutang = append(piutang, RincianItem{
+			Jenis: "PESANAN", NoNota: n.NoNota, Mitra: mitra, 
+			Tanggal: n.TanggalKirim.Format("2006-01-02"), TanggalLunas: tglLunas, Nominal: n.SisaTagihan,
+		})
+	}
+
+	// 3. Hutang
+	var bljs []models.NotaPembelian
+	DB.Where("(is_lunas = false OR (is_lunas = true AND DATE(tanggal_lunas) > ?)) AND tanggal <= ?", targetDate, targetDate).Find(&bljs)
+	for _, n := range bljs {
+		tglLunas := ""
+		if n.TanggalLunas != nil {
+			tglLunas = n.TanggalLunas.Format("2006-01-02")
+		}
+		hutang = append(hutang, RincianItem{
+			Jenis: "BELANJA BAHAN", NoNota: fmt.Sprintf("BELI-%d", n.ID), Mitra: n.Keterangan, 
+			Tanggal: n.Tanggal.Format("2006-01-02"), TanggalLunas: tglLunas, Nominal: n.TotalBiaya,
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"piutang": piutang,
+		"hutang":  hutang,
 	})
 }
 
