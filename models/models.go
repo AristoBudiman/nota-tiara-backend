@@ -83,8 +83,9 @@ type Nota struct {
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
 
-	Status  string `gorm:"default:'KIRIM'"`
-	IsLunas bool   `gorm:"default:false" json:"is_lunas"` // 'KIRIM' atau 'SELESAI'
+	Status       string     `gorm:"default:'KIRIM'"`
+	IsLunas      bool       `gorm:"default:false" json:"is_lunas"` // 'KIRIM' atau 'SELESAI'
+	TanggalLunas *time.Time `json:"tanggal_lunas"`
 	Details []NotaDetail
 }
 
@@ -182,9 +183,10 @@ type NotaPesanan struct {
 	Ongkir       float64 `json:"ongkir"`
 	UangMuka     float64 `gorm:"default:0" json:"uang_muka"`     // <--- BARU (DP)
 	TotalVoucher float64 `gorm:"default:0" json:"total_voucher"` // <--- BARU
-	SisaTagihan  float64 `gorm:"default:0" json:"sisa_tagihan"`
-	Status       string  `gorm:"default:'BELUM DIAMBIL'"`
-	IsLunas      bool    `gorm:"default:false" json:"is_lunas"` // 'BELUM DIAMBIL' atau 'LUNAS/DIAMBIL'
+	SisaTagihan  float64    `gorm:"default:0" json:"sisa_tagihan"`
+	Status       string     `gorm:"default:'BELUM DIAMBIL'"`
+	IsLunas      bool       `gorm:"default:false" json:"is_lunas"` // 'BELUM DIAMBIL' atau 'LUNAS/DIAMBIL'
+	TanggalLunas *time.Time `json:"tanggal_lunas"`
 
 	AssignedTo uint      `json:"assigned_to"`
 	CreatedBy  uint      `json:"created_by"`
@@ -287,9 +289,10 @@ type NotaPembelian struct {
 	ID         uint           `gorm:"primaryKey"`
 	DeletedAt  gorm.DeletedAt `gorm:"index" json:"-"`
 	Tanggal    time.Time      `gorm:"type:date" json:"tanggal"`
-	TotalBiaya float64        `gorm:"not null" json:"total_biaya"` // Grand Total 1 Struk
-	Keterangan string         `json:"keterangan"`
-	IsLunas    bool           `json:"is_lunas"`
+	TotalBiaya   float64        `gorm:"not null" json:"total_biaya"` // Grand Total 1 Struk
+	Keterangan   string         `json:"keterangan"`
+	IsLunas      bool           `json:"is_lunas"`
+	TanggalLunas *time.Time     `json:"tanggal_lunas"`
 
 	Details []NotaPembelianDetail `gorm:"foreignKey:NotaPembelianID" json:"details"`
 }

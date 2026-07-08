@@ -63,9 +63,10 @@ func GetPembelianBahan(c *fiber.Ctx) error {
 func CreatePembelianBahan(c *fiber.Ctx) error {
 	var input struct {
 		Tanggal    string `json:"tanggal"`
-		Keterangan string `json:"keterangan"`
-		IsLunas    bool   `json:"is_lunas"`
-		Details    []struct {
+		Keterangan   string `json:"keterangan"`
+		IsLunas      bool   `json:"is_lunas"`
+		TanggalLunas string `json:"tanggal_lunas"`
+		Details      []struct {
 			BahanID         uint    `json:"bahan_id"`
 			Qty             float64 `json:"qty"`
 			HargaBeliSatuan float64 `json:"harga_beli_satuan"`
@@ -88,11 +89,32 @@ func CreatePembelianBahan(c *fiber.Ctx) error {
 
 	var grandTotal float64
 
+	var tglLunas *time.Time
+	if input.IsLunas {
+		if input.TanggalLunas != "" {
+			tParsed, err := time.Parse("2006-01-02", input.TanggalLunas)
+			if err == nil {
+				sekarang := wib()
+				if tParsed.Format("2006-01-02") == sekarang.Format("2006-01-02") {
+					tParsed = sekarang
+				} else {
+					tParsed = time.Date(tParsed.Year(), tParsed.Month(), tParsed.Day(), 23, 59, 59, 0, sekarang.Location())
+				}
+				tglLunas = &tParsed
+			}
+		}
+		if tglLunas == nil {
+			skrg := wib()
+			tglLunas = &skrg
+		}
+	}
+
 	// 1. Siapkan Induk Nota Pembelian
 	pembelian := models.NotaPembelian{
-		Tanggal:    tgl,
-		Keterangan: input.Keterangan,
-		IsLunas:    input.IsLunas,
+		Tanggal:      tgl,
+		Keterangan:   input.Keterangan,
+		IsLunas:      input.IsLunas,
+		TanggalLunas: tglLunas,
 	}
 
 	// 2. Loop rincian bahan belanjaan
@@ -134,8 +156,13 @@ func CreatePembelianBahan(c *fiber.Ctx) error {
 
 		ketKas := fmt.Sprintf("Belanja Bahan Baku (Nota #%d) - %d Macam Item. Keterangan: %s", pembelian.ID, len(input.Details), input.Keterangan)
 
+		tglKas := wib()
+		if tglLunas != nil {
+			tglKas = *tglLunas
+		}
+		
 		if err := tx.Create(&models.TransaksiKas{
-			Tanggal:    wib(),
+			Tanggal:    tglKas,
 			Kategori:   "BAHAN",
 			Jenis:      "KELUAR",
 			Nominal:    grandTotal,
@@ -169,7 +196,8 @@ func CreatePembelianBahan(c *fiber.Ctx) error {
 func UpdateStatusPembelian(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var input struct {
-		IsLunas bool `json:"is_lunas"`
+		IsLunas      bool   `json:"is_lunas"`
+		TanggalLunas string `json:"tanggal_lunas"`
 	}
 
 	if err := c.BodyParser(&input); err != nil {
@@ -183,7 +211,32 @@ func UpdateStatusPembelian(c *fiber.Ctx) error {
 		return c.Status(404).JSON(fiber.Map{"error": "Nota pembelian tidak ditemukan"})
 	}
 
-	if err := tx.Model(&p).Update("is_lunas", input.IsLunas).Error; err != nil {
+	var tglLunas *time.Time
+	if input.IsLunas {
+		if input.TanggalLunas != "" {
+			tParsed, err := time.Parse("2006-01-02", input.TanggalLunas)
+			if err == nil {
+				sekarang := wib()
+				if tParsed.Format("2006-01-02") == sekarang.Format("2006-01-02") {
+					tParsed = sekarang
+				} else {
+					tParsed = time.Date(tParsed.Year(), tParsed.Month(), tParsed.Day(), 23, 59, 59, 0, sekarang.Location())
+				}
+				tglLunas = &tParsed
+			}
+		}
+		if tglLunas == nil {
+			skrg := wib()
+			tglLunas = &skrg
+		}
+	} else {
+		tglLunas = nil
+	}
+
+	if err := tx.Model(&p).Updates(map[string]interface{}{
+		"is_lunas":      input.IsLunas,
+		"tanggal_lunas": tglLunas,
+	}).Error; err != nil {
 		tx.Rollback()
 		return c.Status(500).JSON(fiber.Map{"error": "Gagal update status"})
 	}
@@ -203,8 +256,12 @@ func UpdateStatusPembelian(c *fiber.Ctx) error {
 			result := tx.Where("no_nota_ref = ?", noNotaRefBeli).Limit(1).Find(&existingKas)
 
 			if result.RowsAffected == 0 {
+				tglKas := wib()
+				if tglLunas != nil {
+					tglKas = *tglLunas
+				}
 				tx.Create(&models.TransaksiKas{
-					Tanggal:    wib(),
+					Tanggal:    tglKas,
 					Kategori:   "BAHAN",
 					Jenis:      "KELUAR",
 					Nominal:    p.TotalBiaya,

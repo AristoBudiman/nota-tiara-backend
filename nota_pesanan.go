@@ -262,6 +262,7 @@ func UpdateNotaPesanan(c *fiber.Ctx) error {
 		AssignedTo       uint    `json:"assigned_to"`
 		Status           string  `json:"status"`
 		IsLunas          bool    `json:"is_lunas"`
+		TanggalLunas     string  `json:"tanggal_lunas"`
 		Ongkir           float64 `json:"ongkir"`
 		UangMuka         float64 `json:"uang_muka"`     // <--- BARU: Tangkap DP
 		TotalVoucher     float64 `json:"total_voucher"` // <--- BARU: Tangkap Voucher
@@ -391,6 +392,28 @@ func UpdateNotaPesanan(c *fiber.Ctx) error {
 	// HITUNG ULANG SISA TAGIHAN SAAT DI-UPDATE
 	sisaTagihan := totalBayar + input.Ongkir - input.UangMuka - input.TotalVoucher
 
+	var tglLunas *time.Time
+	if input.IsLunas {
+		if input.TanggalLunas != "" {
+			tParsed, err := time.Parse("2006-01-02", input.TanggalLunas)
+			if err == nil {
+				sekarang := wib()
+				if tParsed.Format("2006-01-02") == sekarang.Format("2006-01-02") {
+					tParsed = sekarang
+				} else {
+					tParsed = time.Date(tParsed.Year(), tParsed.Month(), tParsed.Day(), 23, 59, 59, 0, sekarang.Location())
+				}
+				tglLunas = &tParsed
+			}
+		}
+		if tglLunas == nil {
+			skrg := wib()
+			tglLunas = &skrg
+		}
+	} else {
+		tglLunas = nil
+	}
+
 	DB.Model(&models.NotaPesanan{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"nama_pemesan":       input.NamaPemesan,
 		"tanggal_kirim":      tgl,
@@ -400,6 +423,7 @@ func UpdateNotaPesanan(c *fiber.Ctx) error {
 		"assigned_to":        input.AssignedTo,
 		"status":             input.Status,
 		"is_lunas":           input.IsLunas,
+		"tanggal_lunas":      tglLunas,
 		"total_bayar":        totalBayar,
 		"ongkir":             input.Ongkir,
 		"uang_muka":          input.UangMuka,     // <--- UPDATE DP
@@ -418,19 +442,26 @@ func UpdateNotaPesanan(c *fiber.Ctx) error {
 		DB.First(&poLama, id)
 		adminID := c.Locals("admin_id").(uint)
 
+		// Tentukan tanggal kas: jika lunas gunakan tglLunas, jika tidak wib()
+		tglKas := wib()
+		if tglLunas != nil {
+			tglKas = *tglLunas
+		}
+
 		// 1. SINKRONISASI DP PESANAN
 		var kasDP models.TransaksiKas
 		errDP := DB.Where("no_nota_ref = ? AND keterangan LIKE 'DP Pesanan%'", poLama.NoNota).First(&kasDP).Error
 
 		if input.UangMuka > 0 {
 			ketDP := fmt.Sprintf("DP Pesanan - %s (Pemesan: %s)", poLama.NoNota, input.NamaPemesan)
+
 			if errDP == nil {
 				selisih := input.UangMuka - kasDP.Nominal
-				DB.Model(&kasDP).Updates(map[string]interface{}{"nominal": input.UangMuka, "keterangan": ketDP})
+				DB.Model(&kasDP).Updates(map[string]interface{}{"nominal": input.UangMuka, "keterangan": ketDP, "tanggal": tglKas})
 				TambahSaldoKas(DB, selisih)
 			} else {
 				DB.Create(&models.TransaksiKas{
-					Tanggal: wib(), Kategori: "PESANAN", Jenis: "MASUK",
+					Tanggal: tglKas, Kategori: "PESANAN", Jenis: "MASUK",
 					Nominal: input.UangMuka, Keterangan: ketDP, NoNotaRef: poLama.NoNota, CreatedBy: adminID,
 				})
 				TambahSaldoKas(DB, input.UangMuka)
@@ -449,12 +480,12 @@ func UpdateNotaPesanan(c *fiber.Ctx) error {
 		if input.IsLunas && sisaTagihan > 0 {
 			ketSisa := fmt.Sprintf("Pelunasan Sisa PO - %s (Pemesan: %s)", poLama.NoNota, input.NamaPemesan)
 			if errSisa == nil {
-				selisih := sisaTagihan - kasSisa.Nominal
-				DB.Model(&kasSisa).Updates(map[string]interface{}{"nominal": sisaTagihan, "keterangan": ketSisa})
-				TambahSaldoKas(DB, selisih)
+				selisihSisa := sisaTagihan - kasSisa.Nominal
+				DB.Model(&kasSisa).Updates(map[string]interface{}{"nominal": sisaTagihan, "keterangan": ketSisa, "tanggal": tglKas})
+				TambahSaldoKas(DB, selisihSisa)
 			} else {
 				DB.Create(&models.TransaksiKas{
-					Tanggal: wib(), Kategori: "PESANAN", Jenis: "MASUK",
+					Tanggal: tglKas, Kategori: "PESANAN", Jenis: "MASUK",
 					Nominal: sisaTagihan, Keterangan: ketSisa, NoNotaRef: poLama.NoNota, CreatedBy: adminID,
 				})
 				TambahSaldoKas(DB, sisaTagihan)

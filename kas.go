@@ -60,9 +60,21 @@ func GetKas(c *fiber.Ctx) error {
 	var master models.MasterKas
 	DB.First(&master, 1)
 
+	saldoAkhirPeriode := master.Saldo
+	if endDate != "" {
+		hariIni := wib().Format("2006-01-02")
+		if endDate != hariIni {
+			var totalMasukBaru, totalKeluarBaru float64
+			DB.Model(&models.TransaksiKas{}).Where("jenis = 'MASUK' AND DATE(tanggal) > ?", endDate).Select("COALESCE(SUM(nominal), 0)").Row().Scan(&totalMasukBaru)
+			DB.Model(&models.TransaksiKas{}).Where("jenis = 'KELUAR' AND DATE(tanggal) > ?", endDate).Select("COALESCE(SUM(nominal), 0)").Row().Scan(&totalKeluarBaru)
+			saldoAkhirPeriode = saldoAkhirPeriode - totalMasukBaru + totalKeluarBaru
+		}
+	}
+
 	return c.JSON(fiber.Map{
-		"saldo_saat_ini": master.Saldo,
-		"riwayat":        kas,
+		"saldo_saat_ini":      master.Saldo,
+		"saldo_akhir_periode": saldoAkhirPeriode,
+		"riwayat":             kas,
 	})
 }
 
@@ -273,15 +285,15 @@ func GetAnalisisAsetLive(c *fiber.Ctx) error {
 		kasLive = kasLive - totalMasukBaru + totalKeluarBaru
 	}
 
-	// 2. TOTAL PIUTANG (Masih hutang dan dibuat sebelum/pada tanggal target)
+	// 2. TOTAL PIUTANG (Masih hutang dan dibuat sebelum/pada tanggal target ATAU lunas tapi setelah tanggal target)
 	var piutangReguler, piutangPO float64
-	DB.Model(&models.Nota{}).Where("is_lunas = false AND status != 'DIBATALKAN' AND tanggal_kirim <= ?", targetDate).Select("COALESCE(SUM(total_bayar), 0)").Row().Scan(&piutangReguler)
-	DB.Model(&models.NotaPesanan{}).Where("is_lunas = false AND status != 'DIBATALKAN' AND tanggal_kirim <= ?", targetDate).Select("COALESCE(SUM(sisa_tagihan), 0)").Row().Scan(&piutangPO)
+	DB.Model(&models.Nota{}).Where("(is_lunas = false OR (is_lunas = true AND DATE(tanggal_lunas) > ?)) AND status != 'DIBATALKAN' AND tanggal_kirim <= ?", targetDate, targetDate).Select("COALESCE(SUM(total_bayar), 0)").Row().Scan(&piutangReguler)
+	DB.Model(&models.NotaPesanan{}).Where("(is_lunas = false OR (is_lunas = true AND DATE(tanggal_lunas) > ?)) AND status != 'DIBATALKAN' AND tanggal_kirim <= ?", targetDate, targetDate).Select("COALESCE(SUM(sisa_tagihan), 0)").Row().Scan(&piutangPO)
 	piutangLive := piutangReguler + piutangPO
 
-	// 3. TOTAL HUTANG (Belum lunas dan dibeli sebelum/pada tanggal target)
+	// 3. TOTAL HUTANG (Belum lunas dan dibeli sebelum/pada tanggal target ATAU lunas tapi setelah tanggal target)
 	var hutangLive float64
-	DB.Model(&models.NotaPembelian{}).Where("is_lunas = false AND tanggal <= ?", targetDate).Select("COALESCE(SUM(total_biaya), 0)").Row().Scan(&hutangLive)
+	DB.Model(&models.NotaPembelian{}).Where("(is_lunas = false OR (is_lunas = true AND DATE(tanggal_lunas) > ?)) AND tanggal <= ?", targetDate, targetDate).Select("COALESCE(SUM(total_biaya), 0)").Row().Scan(&hutangLive)
 
 	// 4. NILAI PERSEDIAAN (Menggunakan stok saat ini)
 	var inventoryLive float64
@@ -344,12 +356,12 @@ func SimpanSnapshotAset(c *fiber.Ctx) error {
 	DB.Model(&models.TransaksiKas{}).Where("jenis = 'MASUK' AND DATE(tanggal) <= ?", tglStr).Select("COALESCE(SUM(nominal), 0)").Row().Scan(&kM)
 	DB.Model(&models.TransaksiKas{}).Where("jenis = 'KELUAR' AND DATE(tanggal) <= ?", tglStr).Select("COALESCE(SUM(nominal), 0)").Row().Scan(&kK)
 
-	// 2. PIUTANG (Nota/PO yang dibuat s/d tanggal snapshot dan belum lunas)
-	DB.Model(&models.Nota{}).Where("is_lunas = false AND status != 'DIBATALKAN' AND tanggal_kirim <= ?", tglStr).Select("COALESCE(SUM(total_bayar), 0)").Row().Scan(&pR)
-	DB.Model(&models.NotaPesanan{}).Where("is_lunas = false AND status != 'DIBATALKAN' AND tanggal_kirim <= ?", tglStr).Select("COALESCE(SUM(sisa_tagihan), 0)").Row().Scan(&pPO)
+	// 2. PIUTANG (Nota/PO yang dibuat s/d tanggal snapshot dan belum lunas ATAU lunas tapi setelah tanggal snapshot)
+	DB.Model(&models.Nota{}).Where("(is_lunas = false OR (is_lunas = true AND DATE(tanggal_lunas) > ?)) AND status != 'DIBATALKAN' AND tanggal_kirim <= ?", tglStr, tglStr).Select("COALESCE(SUM(total_bayar), 0)").Row().Scan(&pR)
+	DB.Model(&models.NotaPesanan{}).Where("(is_lunas = false OR (is_lunas = true AND DATE(tanggal_lunas) > ?)) AND status != 'DIBATALKAN' AND tanggal_kirim <= ?", tglStr, tglStr).Select("COALESCE(SUM(sisa_tagihan), 0)").Row().Scan(&pPO)
 
-	// 3. HUTANG (Pembelian s/d tanggal snapshot yang belum lunas)
-	DB.Model(&models.NotaPembelian{}).Where("is_lunas = false AND tanggal <= ?", tglStr).Select("COALESCE(SUM(total_biaya), 0)").Row().Scan(&hL)
+	// 3. HUTANG (Pembelian s/d tanggal snapshot yang belum lunas ATAU lunas tapi setelah tanggal snapshot)
+	DB.Model(&models.NotaPembelian{}).Where("(is_lunas = false OR (is_lunas = true AND DATE(tanggal_lunas) > ?)) AND tanggal <= ?", tglStr, tglStr).Select("COALESCE(SUM(total_biaya), 0)").Row().Scan(&hL)
 
 	// 4. PERSEDIAAN (Khusus stok gudang selalu mengambil keadaan real-time saat tombol dikunci)
 	DB.Model(&models.Bahan{}).Select("COALESCE(SUM(stok * harga_saat_ini), 0)").Row().Scan(&inv)

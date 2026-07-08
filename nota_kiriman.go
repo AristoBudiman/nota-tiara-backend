@@ -236,6 +236,7 @@ func UpdateNota(c *fiber.Ctx) error {
 		AssignedTo   uint    `json:"assigned_to"`
 		Status       string  `json:"status"`
 		IsLunas      bool    `json:"is_lunas"`
+		TanggalLunas string  `json:"tanggal_lunas"`
 		TotalDiskon  float64 `json:"total_diskon"`
 		TotalVoucher float64 `json:"total_voucher"`
 		Details      []struct {
@@ -322,6 +323,28 @@ func UpdateNota(c *fiber.Ctx) error {
 	// LOGIKA UANG RIIL
 	totalBayarAkhir := totalKirim - totalRetur - input.TotalDiskon - input.TotalVoucher
 
+	var tglLunas *time.Time
+	if input.IsLunas {
+		if input.TanggalLunas != "" {
+			tParsed, err := time.Parse("2006-01-02", input.TanggalLunas)
+			if err == nil {
+				sekarang := wib()
+				if tParsed.Format("2006-01-02") == sekarang.Format("2006-01-02") {
+					tParsed = sekarang
+				} else {
+					tParsed = time.Date(tParsed.Year(), tParsed.Month(), tParsed.Day(), 23, 59, 59, 0, sekarang.Location())
+				}
+				tglLunas = &tParsed
+			}
+		}
+		if tglLunas == nil {
+			skrg := wib()
+			tglLunas = &skrg
+		}
+	} else {
+		tglLunas = nil
+	}
+
 	DB.Model(&models.Nota{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"tanggal_kirim": tglBaru,
 		"jumlah_kirim":  totalKirim, // <--- 5. WAJIB UPDATE TOTAL KIRIM DI HEADER
@@ -332,6 +355,7 @@ func UpdateNota(c *fiber.Ctx) error {
 		"assigned_to":   input.AssignedTo,
 		"status":        input.Status,
 		"is_lunas":      input.IsLunas,
+		"tanggal_lunas": tglLunas,
 	})
 
 	// ==========================================
@@ -360,12 +384,13 @@ func UpdateNota(c *fiber.Ctx) error {
 				DB.Model(&kasReguler).Updates(map[string]interface{}{
 					"nominal":    totalBayarAkhir,
 					"keterangan": ket,
+					"tanggal":    *tglLunas,
 				})
 				TambahSaldoKas(DB, selisih)
 			} else {
 				// Belum ada, CREATE kas masuk
 				DB.Create(&models.TransaksiKas{
-					Tanggal:    wib(),
+					Tanggal:    *tglLunas,
 					Kategori:   "REGULER",
 					Jenis:      "MASUK",
 					Nominal:    totalBayarAkhir,

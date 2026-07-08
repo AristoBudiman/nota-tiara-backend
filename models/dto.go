@@ -62,6 +62,7 @@ type NotaInput struct {
 	TanggalKirim string            `json:"tanggal_kirim" validate:"required" example:"2026-04-27"`
 	Status       string            `json:"status" validate:"required" enums:"KIRIM,DIBATALKAN,SELESAI" example:"KIRIM"`
 	IsLunas      bool              `json:"is_lunas" example:"false"`
+	TanggalLunas string            `json:"tanggal_lunas" example:"2026-04-27"`
 	AssignedTo   uint              `json:"assigned_to" example:"2"`
 	TotalDiskon  float64           `json:"total_diskon" example:"0"`
 	TotalVoucher float64           `json:"total_voucher" example:"50000"`
@@ -111,6 +112,7 @@ type NotaPesananInput struct {
 	AssignedTo       uint                     `json:"assigned_to" example:"2"`
 	Status           string                   `json:"status" validate:"required" enums:"MENUNGGU,DIPROSES,DIKIRIM,DIAMBIL,DIBATALKAN" example:"MENUNGGU"`
 	IsLunas          bool                     `json:"is_lunas" example:"false"`
+	TanggalLunas     string                   `json:"tanggal_lunas" example:"2026-04-30"`
 	Ongkir           float64                  `json:"ongkir" example:"15000"`
 	UangMuka         float64                  `json:"uang_muka" example:"50000"`
 	TotalVoucher     float64                  `json:"total_voucher" example:"10000"`
@@ -208,7 +210,8 @@ type PembelianBahanInput struct {
 
 // StatusPembelianInput merepresentasikan saklar lunas/hutang
 type StatusPembelianInput struct {
-	IsLunas bool `json:"is_lunas" validate:"required" example:"true"`
+	IsLunas      bool   `json:"is_lunas" validate:"required" example:"true"`
+	TanggalLunas string `json:"tanggal_lunas" example:"2026-05-16"`
 }
 
 // ProduksiMasakInput merepresentasikan catatan masak adonan harian
