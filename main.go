@@ -634,6 +634,7 @@ func main() {
 	// ANALISIS ASET & PERTUMBUHAN
 	api.Get("/aset/live", RequirePermission("view_analisis_aset"), GetAnalisisAsetLive)
 	api.Get("/aset/rincian", RequirePermission("view_analisis_aset"), GetRincianAset)
+	api.Get("/aset/rincian-kas", RequirePermission("view_analisis_aset"), GetRincianMutasiKas)
 	api.Post("/aset/snapshot", RequirePermission("view_analisis_aset"), SimpanSnapshotAset)
 	api.Get("/aset/riwayat", RequirePermission("view_analisis_aset"), GetRiwayatAset)
 

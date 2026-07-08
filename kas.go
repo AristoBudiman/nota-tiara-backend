@@ -411,6 +411,80 @@ func GetRincianAset(c *fiber.Ctx) error {
 	})
 }
 
+// GetRincianMutasiKas godoc
+// @Summary Daftar Mutasi Kas
+// @Description Menarik riwayat transaksi kas (Buku Kas mini) antara start_date dan end_date beserta saldo awal.
+// @Tags 15. Analisis & Aset
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param start_date query string false "Tanggal mulai (Format: YYYY-MM-DD)"
+// @Param end_date query string false "Tanggal akhir (Format: YYYY-MM-DD)"
+// @Success 200 {object} map[string]interface{} "Data mutasi kas"
+// @Router /api/aset/rincian-kas [get]
+func GetRincianMutasiKas(c *fiber.Ctx) error {
+	startDate := c.Query("start_date")
+	endDate := c.Query("end_date")
+
+	if endDate == "" {
+		endDate = wib().Format("2006-01-02")
+	}
+	if startDate == "" {
+		tglTarget, _ := time.Parse("2006-01-02", endDate)
+		startDate = time.Date(tglTarget.Year(), tglTarget.Month(), 1, 0, 0, 0, 0, time.Local).Format("2006-01-02")
+	}
+
+	// 1. Dapatkan Saldo Kas Saat Ini
+	var master models.MasterKas
+	DB.First(&master, 1)
+
+	// 2. Hitung mundur untuk mendapatkan Saldo Awal (Tepat sebelum startDate)
+	// Saldo Awal = Saldo Sekarang - (Total Masuk dari startDate s/d HARI INI) + (Total Keluar dari startDate s/d HARI INI)
+	var mas, kel float64
+	DB.Model(&models.TransaksiKas{}).Where("jenis = 'MASUK' AND DATE(tanggal) >= ?", startDate).Select("COALESCE(SUM(nominal), 0)").Row().Scan(&mas)
+	DB.Model(&models.TransaksiKas{}).Where("jenis = 'KELUAR' AND DATE(tanggal) >= ?", startDate).Select("COALESCE(SUM(nominal), 0)").Row().Scan(&kel)
+	saldoAwal := master.Saldo - mas + kel
+
+	// 3. Tarik Transaksi Kas dalam Rentang Waktu Tersebut
+	var mutasi []models.TransaksiKas
+	DB.Where("DATE(tanggal) >= ? AND DATE(tanggal) <= ?", startDate, endDate).Order("tanggal ASC, id ASC").Find(&mutasi)
+
+	// 4. Kalkulasi Saldo Berjalan dan Saldo Akhir
+	saldoBerjalan := saldoAwal
+	
+	type MutasiItem struct {
+		Tanggal       string  `json:"tanggal"`
+		Kategori      string  `json:"kategori"`
+		Jenis         string  `json:"jenis"`
+		Keterangan    string  `json:"keterangan"`
+		Nominal       float64 `json:"nominal"`
+		SaldoBerjalan float64 `json:"saldo_berjalan"`
+	}
+
+	mutasiList := []MutasiItem{}
+	for _, m := range mutasi {
+		if m.Jenis == "MASUK" {
+			saldoBerjalan += m.Nominal
+		} else {
+			saldoBerjalan -= m.Nominal
+		}
+		mutasiList = append(mutasiList, MutasiItem{
+			Tanggal:       m.Tanggal.Format("2006-01-02"),
+			Kategori:      m.Kategori,
+			Jenis:         m.Jenis,
+			Keterangan:    m.Keterangan,
+			Nominal:       m.Nominal,
+			SaldoBerjalan: saldoBerjalan,
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"saldo_awal":  saldoAwal,
+		"mutasi":      mutasiList,
+		"saldo_akhir": saldoBerjalan, // Saldo akhir setelah semua mutasi diproses
+	})
+}
+
 // FUNGSI UNTUK MENGUNCI (SNAPSHOT) ASET AKHIR BULAN
 //
 // SimpanSnapshotAset godoc
