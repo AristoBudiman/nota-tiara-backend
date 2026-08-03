@@ -280,21 +280,24 @@ func GetAnalisisAsetLive(c *fiber.Ctx) error {
 	hariIni := wib().Format("2006-01-02")
 	if targetDate != hariIni {
 		// Hitung mundur: Kas Dulu = Kas Sekarang - Masuk (Baru) + Keluar (Baru)
+		targetDateAkhir := targetDate + " 23:59:59"
+		hariIniAkhir := hariIni + " 23:59:59"
 		var totalMasukBaru, totalKeluarBaru float64
-		DB.Model(&models.TransaksiKas{}).Where("jenis = 'MASUK' AND DATE(tanggal) > ? AND DATE(tanggal) <= ?", targetDate, hariIni).Select("COALESCE(SUM(nominal), 0)").Row().Scan(&totalMasukBaru)
-		DB.Model(&models.TransaksiKas{}).Where("jenis = 'KELUAR' AND DATE(tanggal) > ? AND DATE(tanggal) <= ?", targetDate, hariIni).Select("COALESCE(SUM(nominal), 0)").Row().Scan(&totalKeluarBaru)
+		DB.Model(&models.TransaksiKas{}).Where("jenis = 'MASUK' AND tanggal > ? AND tanggal <= ?", targetDateAkhir, hariIniAkhir).Select("COALESCE(SUM(nominal), 0)").Row().Scan(&totalMasukBaru)
+		DB.Model(&models.TransaksiKas{}).Where("jenis = 'KELUAR' AND tanggal > ? AND tanggal <= ?", targetDateAkhir, hariIniAkhir).Select("COALESCE(SUM(nominal), 0)").Row().Scan(&totalKeluarBaru)
 		kasLive = kasLive - totalMasukBaru + totalKeluarBaru
 	}
 
 	// 2. TOTAL PIUTANG (Masih hutang dan dibuat sebelum/pada tanggal target ATAU lunas tapi setelah tanggal target)
 	var piutangReguler, piutangPO float64
-	DB.Model(&models.Nota{}).Where("(is_lunas = false OR (is_lunas = true AND DATE(tanggal_lunas) > ?)) AND status != 'DIBATALKAN' AND tanggal_kirim <= ?", targetDate, targetDate).Select("COALESCE(SUM(total_bayar), 0)").Row().Scan(&piutangReguler)
-	DB.Model(&models.NotaPesanan{}).Where("(is_lunas = false OR (is_lunas = true AND DATE(tanggal_lunas) > ?)) AND status != 'DIBATALKAN' AND tanggal_kirim <= ?", targetDate, targetDate).Select("COALESCE(SUM(sisa_tagihan), 0)").Row().Scan(&piutangPO)
+	targetDateAkhirMain := targetDate + " 23:59:59"
+	DB.Model(&models.Nota{}).Where("(is_lunas = false OR (is_lunas = true AND tanggal_lunas > ?)) AND status != 'DIBATALKAN' AND tanggal_kirim <= ?", targetDateAkhirMain, targetDateAkhirMain).Select("COALESCE(SUM(total_bayar), 0)").Row().Scan(&piutangReguler)
+	DB.Model(&models.NotaPesanan{}).Where("(is_lunas = false OR (is_lunas = true AND tanggal_lunas > ?)) AND status != 'DIBATALKAN' AND tanggal_kirim <= ?", targetDateAkhirMain, targetDateAkhirMain).Select("COALESCE(SUM(sisa_tagihan), 0)").Row().Scan(&piutangPO)
 	piutangLive := piutangReguler + piutangPO
 
 	// 3. TOTAL HUTANG (Belum lunas dan dibeli sebelum/pada tanggal target ATAU lunas tapi setelah tanggal target)
 	var hutangLive float64
-	DB.Model(&models.NotaPembelian{}).Where("(is_lunas = false OR (is_lunas = true AND DATE(tanggal_lunas) > ?)) AND tanggal <= ?", targetDate, targetDate).Select("COALESCE(SUM(total_biaya), 0)").Row().Scan(&hutangLive)
+	DB.Model(&models.NotaPembelian{}).Where("(is_lunas = false OR (is_lunas = true AND tanggal_lunas > ?)) AND tanggal <= ?", targetDateAkhirMain, targetDateAkhirMain).Select("COALESCE(SUM(total_biaya), 0)").Row().Scan(&hutangLive)
 
 	// 4. NILAI PERSEDIAAN (Menggunakan stok saat ini)
 	var inventoryLive float64
@@ -302,8 +305,9 @@ func GetAnalisisAsetLive(c *fiber.Ctx) error {
 
 	// 5. HITUNG PRIVE (Flow: Dari start_date sampai targetDate)
 	var totalPrive float64
+	startDatePriveMulai := startDatePrive + " 00:00:00"
 	DB.Model(&models.TransaksiKas{}).
-		Where("kategori = 'RUMAH_TANGGA' AND jenis = 'KELUAR' AND DATE(tanggal) >= ? AND DATE(tanggal) <= ?", startDatePrive, targetDate).
+		Where("kategori = 'RUMAH_TANGGA' AND jenis = 'KELUAR' AND tanggal >= ? AND tanggal <= ?", startDatePriveMulai, targetDateAkhirMain).
 		Select("COALESCE(SUM(nominal), 0)").Row().Scan(&totalPrive)
 
 	// 6. AMBIL DATA BULAN LALU (Snapshot terakhir sebelum targetDate)
@@ -357,7 +361,8 @@ func GetRincianAset(c *fiber.Ctx) error {
 
 	// 1. Piutang Reguler
 	var notas []models.Nota
-	DB.Preload("Toko").Where("(is_lunas = false OR (is_lunas = true AND DATE(tanggal_lunas) > ?)) AND status != 'DIBATALKAN' AND tanggal_kirim <= ?", targetDate, targetDate).Find(&notas)
+	targetDateAkhirRincian := targetDate + " 23:59:59"
+	DB.Preload("Toko").Where("(is_lunas = false OR (is_lunas = true AND tanggal_lunas > ?)) AND status != 'DIBATALKAN' AND tanggal_kirim <= ?", targetDateAkhirRincian, targetDateAkhirRincian).Find(&notas)
 	for _, n := range notas {
 		mitra := ""
 		if n.TokoID != 0 {
@@ -375,7 +380,7 @@ func GetRincianAset(c *fiber.Ctx) error {
 
 	// 2. Piutang PO
 	var pos []models.NotaPesanan
-	DB.Preload("Toko").Where("(is_lunas = false OR (is_lunas = true AND DATE(tanggal_lunas) > ?)) AND status != 'DIBATALKAN' AND tanggal_kirim <= ?", targetDate, targetDate).Find(&pos)
+	DB.Preload("Toko").Where("(is_lunas = false OR (is_lunas = true AND tanggal_lunas > ?)) AND status != 'DIBATALKAN' AND tanggal_kirim <= ?", targetDateAkhirRincian, targetDateAkhirRincian).Find(&pos)
 	for _, n := range pos {
 		mitra := n.NamaPemesan
 		if n.TokoID != nil && n.Toko.NamaToko != "" {
@@ -393,7 +398,7 @@ func GetRincianAset(c *fiber.Ctx) error {
 
 	// 3. Hutang
 	var bljs []models.NotaPembelian
-	DB.Where("(is_lunas = false OR (is_lunas = true AND DATE(tanggal_lunas) > ?)) AND tanggal <= ?", targetDate, targetDate).Find(&bljs)
+	DB.Where("(is_lunas = false OR (is_lunas = true AND tanggal_lunas > ?)) AND tanggal <= ?", targetDateAkhirRincian, targetDateAkhirRincian).Find(&bljs)
 	for _, n := range bljs {
 		tglLunas := ""
 		if n.TanggalLunas != nil {
@@ -441,13 +446,15 @@ func GetRincianMutasiKas(c *fiber.Ctx) error {
 	// 2. Hitung mundur untuk mendapatkan Saldo Awal (Tepat sebelum startDate)
 	// Saldo Awal = Saldo Sekarang - (Total Masuk dari startDate s/d HARI INI) + (Total Keluar dari startDate s/d HARI INI)
 	var mas, kel float64
-	DB.Model(&models.TransaksiKas{}).Where("jenis = 'MASUK' AND DATE(tanggal) >= ?", startDate).Select("COALESCE(SUM(nominal), 0)").Row().Scan(&mas)
-	DB.Model(&models.TransaksiKas{}).Where("jenis = 'KELUAR' AND DATE(tanggal) >= ?", startDate).Select("COALESCE(SUM(nominal), 0)").Row().Scan(&kel)
+	startDateMulai := startDate + " 00:00:00"
+	endDateAkhir := endDate + " 23:59:59"
+	DB.Model(&models.TransaksiKas{}).Where("jenis = 'MASUK' AND tanggal >= ?", startDateMulai).Select("COALESCE(SUM(nominal), 0)").Row().Scan(&mas)
+	DB.Model(&models.TransaksiKas{}).Where("jenis = 'KELUAR' AND tanggal >= ?", startDateMulai).Select("COALESCE(SUM(nominal), 0)").Row().Scan(&kel)
 	saldoAwal := master.Saldo - mas + kel
 
 	// 3. Tarik Transaksi Kas dalam Rentang Waktu Tersebut
 	var mutasi []models.TransaksiKas
-	DB.Where("DATE(tanggal) >= ? AND DATE(tanggal) <= ?", startDate, endDate).Order("tanggal ASC, id ASC").Find(&mutasi)
+	DB.Where("tanggal >= ? AND tanggal <= ?", startDateMulai, endDateAkhir).Order("tanggal ASC, id ASC").Find(&mutasi)
 
 	// 4. Kalkulasi Saldo Berjalan dan Saldo Akhir
 	saldoBerjalan := saldoAwal
