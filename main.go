@@ -597,6 +597,11 @@ func main() {
 	// CATATAN BESAR
 	api.Get("/catatan-besar", RequirePermission("view_catatan_besar"), GetCatatanBesar)
 
+	// EXPORT EXCEL
+	api.Get("/export/catatan-besar", RequirePermission("view_catatan_besar"), ExportCatatanBesar)
+	api.Get("/export/catatan-pesanan", RequirePermission("manage_nota_pesanan"), ExportCatatanPesanan)
+	api.Get("/export/skripsi", RequirePermission("view_catatan_besar"), ExportSkripsi)
+
 	// RANGKUMAN
 	api.Get("/rangkuman", RequirePermission("view_rangkuman_penjualan"), GetRangkuman)
 	api.Get("/rangkuman-per-toko", RequirePermission("view_rangkuman_penjualan"), GetRangkumanPerToko)
