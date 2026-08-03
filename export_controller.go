@@ -12,6 +12,7 @@ import (
 
 // CatatanBesarResult is used for scanning DB results
 type CatatanBesarResult struct {
+	BarangId   int     `json:"barang_id"`
 	NamaBarang string  `json:"nama_barang"`
 	NamaToko   string  `json:"nama_toko"`
 	Siklus     string  `json:"siklus"`
@@ -112,6 +113,7 @@ func ExportCatatanBesar(c *fiber.Ctx) error {
 
 	query := fmt.Sprintf(`
 		SELECT 
+			barangs.id as barang_id,
 			barangs.nama_barang, 
 			tokos.nama_toko,
 			MAX(nota.siklus_snapshot) as siklus,
@@ -131,7 +133,7 @@ func ExportCatatanBesar(c *fiber.Ctx) error {
 		  AND 
 		    nota.tanggal_kirim >= CAST(? AS DATE) - INTERVAL '30 days'
 		  AND nota.status != 'DIBATALKAN'
-		GROUP BY barangs.nama_barang, tokos.nama_toko, CAST(nota.tanggal_kirim AS DATE), nota.id
+		GROUP BY barangs.id, barangs.nama_barang, tokos.nama_toko, CAST(nota.tanggal_kirim AS DATE), nota.id
 	`, kirimDateExpr, returDateExpr, kirimDateExpr, returDateExpr, siklusFilter)
 
 	err := DB.Raw(query, tanggal, tanggal, tanggal, tanggal, tanggal).Scan(&results).Error
@@ -139,9 +141,23 @@ func ExportCatatanBesar(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	// 1. Process data: extract unique stores and unique items
+	// Ambil semua barang dari database agar yang 0 qty tetap tampil
+	type BarangItem struct {
+		ID         int
+		NamaBarang string
+	}
+	var allBarangs []BarangItem
+	if err := DB.Raw("SELECT id, nama_barang FROM barangs ORDER BY id ASC").Scan(&allBarangs).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	var uniqueBarangs []string
+	for _, b := range allBarangs {
+		uniqueBarangs = append(uniqueBarangs, b.NamaBarang)
+	}
+
+	// 1. Process data: extract unique stores
 	tokosMap := make(map[string]TokoMeta)
-	itemsMap := make(map[string]bool)
 
 	tokoKirimDates := make(map[string][]string)
 	tokoKirimSet := make(map[string]map[string]bool)
@@ -155,10 +171,6 @@ func ExportCatatanBesar(c *fiber.Ctx) error {
 	for _, row := range results {
 		if _, ok := tokosMap[row.NamaToko]; !ok {
 			tokosMap[row.NamaToko] = TokoMeta{NamaToko: row.NamaToko, Siklus: row.Siklus}
-		}
-
-		if row.QtyKirim > 0 || row.QtyRetur > 0 {
-			itemsMap[row.NamaBarang] = true
 		}
 
 		var sortableDateStr string
@@ -222,12 +234,6 @@ func ExportCatatanBesar(c *fiber.Ctx) error {
 		}
 		return strings.Compare(filteredTokos[i].NamaToko, filteredTokos[j].NamaToko) < 0
 	})
-
-	var uniqueBarangs []string
-	for item := range itemsMap {
-		uniqueBarangs = append(uniqueBarangs, item)
-	}
-	sort.Strings(uniqueBarangs)
 
 	// 2. Generate Excel
 	f := excelize.NewFile()
