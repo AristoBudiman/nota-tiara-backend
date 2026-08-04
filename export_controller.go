@@ -316,20 +316,20 @@ func ExportCatatanBesar(c *fiber.Ctx) error {
 				displayDate = parts[2]
 			}
 			
-			headerText := "Kirim"
+			headerText := "K"
 			if displayDate != "Kirim" && displayDate != "" {
-				headerText = fmt.Sprintf("Kirim %s", displayDate)
+				headerText = fmt.Sprintf("K %s", displayDate)
 			}
 			f.SetCellValue(sheet, colName+"3", headerText)
 			f.SetCellStyle(sheet, colName+"3", colName+"3", headerStyle)
-			f.SetColWidth(sheet, colName, colName, 15)
+			f.SetColWidth(sheet, colName, colName, 10)
 			currCol++
 		}
 
 		returColName, _ := excelize.ColumnNumberToName(currCol)
 		f.SetCellValue(sheet, returColName+"3", "Retur")
 		f.SetCellStyle(sheet, returColName+"3", returColName+"3", headerStyle)
-		f.SetColWidth(sheet, returColName, returColName, 15)
+		f.SetColWidth(sheet, returColName, returColName, 10)
 
 		colIndex += numCols
 	}
@@ -352,7 +352,7 @@ func ExportCatatanBesar(c *fiber.Ctx) error {
 				qtyKirim := cellKirimData[key]
 				
 				colName, _ := excelize.ColumnNumberToName(colIdx)
-				var val interface{} = "-"
+				var val interface{} = ""
 				if qtyKirim > 0 { val = qtyKirim }
 				f.SetCellValue(sheet, fmt.Sprintf("%s%d", colName, rowIndex), val)
 				f.SetCellStyle(sheet, fmt.Sprintf("%s%d", colName, rowIndex), fmt.Sprintf("%s%d", colName, rowIndex), cellBorder)
@@ -362,7 +362,7 @@ func ExportCatatanBesar(c *fiber.Ctx) error {
 			keyRetur := toko.NamaToko + "-" + barang
 			qtyRetur := cellReturData[keyRetur]
 			returColName, _ := excelize.ColumnNumberToName(colIdx)
-			var val interface{} = "-"
+			var val interface{} = ""
 			if qtyRetur > 0 { val = qtyRetur }
 			f.SetCellValue(sheet, fmt.Sprintf("%s%d", returColName, rowIndex), val)
 			f.SetCellStyle(sheet, fmt.Sprintf("%s%d", returColName, rowIndex), fmt.Sprintf("%s%d", returColName, rowIndex), cellBorder)
