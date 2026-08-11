@@ -53,93 +53,33 @@ func getSiklusPriority(siklus string) int {
 }
 
 func ExportCatatanBesar(c *fiber.Ctx) error {
-	siklus := c.Query("siklus")
-	tanggal := c.Query("tanggal")
+	startDateStr := c.Query("start_date")
+	endDateStr := c.Query("end_date")
+	accStartDateStr := c.Query("acc_start_date")
 
-	if tanggal == "" {
-		tanggal = wib().Format("2006-01-02")
-	}
-
-	siklusFilter := "nota.siklus_snapshot = 'HARIAN'"
-	if siklus != "" {
-		if siklus == "SiklusJumatSelasa" {
-			siklusFilter = "(nota.siklus_snapshot = 'SiklusJumatSelasa' OR nota.siklus_snapshot = 'SiklusDua' OR nota.siklus_snapshot = 'HARIAN')"
-		} else {
-			siklusFilter = fmt.Sprintf("(nota.siklus_snapshot = '%s' OR nota.siklus_snapshot = 'HARIAN')", siklus)
+	if startDateStr == "" || endDateStr == "" || accStartDateStr == "" {
+		tanggal := c.Query("tanggal")
+		if tanggal == "" {
+			tanggal = wib().Format("2006-01-02")
 		}
+		startDateStr = tanggal
+		endDateStr = tanggal
+		accStartDateStr = tanggal
 	}
 
-	var results []CatatanBesarResult
-
-	kirimDateExpr := `CAST(
-		CASE 
-			WHEN nota.siklus_snapshot = 'HARIAN' THEN nota.tanggal_kirim
-			WHEN nota.siklus_snapshot = 'SiklusDua' THEN 
-				CASE 
-					WHEN EXTRACT(DOW FROM nota.tanggal_kirim) IN (1,2,3) THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '1 days'
-					WHEN EXTRACT(DOW FROM nota.tanggal_kirim) IN (4,5,6) THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '4 days'
-					ELSE nota.tanggal_kirim
-				END
-			WHEN nota.siklus_snapshot = 'SiklusKamisSenin' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '3 days'
-			WHEN nota.siklus_snapshot = 'SiklusJumatSelasa' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '4 days'
-			WHEN nota.siklus_snapshot = 'SiklusSabtuRabu' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '5 days'
-			ELSE nota.tanggal_kirim
-		END AS DATE)`
-
-	returDateExpr := `CAST(
-		CASE 
-			WHEN nota.siklus_snapshot = 'HARIAN' THEN 
-				CASE EXTRACT(ISODOW FROM nota.tanggal_kirim)
-					WHEN 1 THEN DATE_TRUNC('week', nota.tanggal_kirim) - INTERVAL '4 days'
-					WHEN 2 THEN DATE_TRUNC('week', nota.tanggal_kirim) - INTERVAL '3 days'
-					WHEN 3 THEN DATE_TRUNC('week', nota.tanggal_kirim) - INTERVAL '2 days'
-					WHEN 4 THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '0 days'
-					WHEN 5 THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '1 days'
-					WHEN 6 THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '2 days'
-					WHEN 7 THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '2 days'
-					ELSE nota.tanggal_kirim
-				END
-			WHEN nota.siklus_snapshot = 'SiklusDua' THEN 
-				CASE 
-					WHEN EXTRACT(DOW FROM nota.tanggal_kirim) IN (1,2,3) THEN DATE_TRUNC('week', nota.tanggal_kirim) - INTERVAL '3 days'
-					WHEN EXTRACT(DOW FROM nota.tanggal_kirim) IN (4,5,6) THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '1 days'
-					ELSE nota.tanggal_kirim
-				END
-			WHEN nota.siklus_snapshot = 'SiklusKamisSenin' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '7 days'
-			WHEN nota.siklus_snapshot = 'SiklusJumatSelasa' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '8 days'
-			WHEN nota.siklus_snapshot = 'SiklusSabtuRabu' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '9 days'
-			ELSE nota.tanggal_kirim + INTERVAL '4 days'
-		END AS DATE)`
-
-	query := fmt.Sprintf(`
-		SELECT 
-			barangs.id as barang_id,
-			barangs.nama_barang, 
-			tokos.nama_toko,
-			MAX(nota.siklus_snapshot) as siklus,
-			bool_or(nota.is_harian_snapshot) as is_harian, 
-			CAST(nota.tanggal_kirim AS DATE) as tgl_asli,
-			nota.id as nota_id,
-			COALESCE(SUM(CASE WHEN %s = CAST(? AS DATE) THEN nota_details.banyak_kirim ELSE 0 END), 0) as qty_kirim, 
-			COALESCE(SUM(CASE WHEN %s = CAST(? AS DATE) THEN nota_details.banyak_retur ELSE 0 END), 0) as qty_retur, 
-			COALESCE(SUM(CASE WHEN %s = CAST(? AS DATE) THEN nota_details.harga_kirim ELSE 0 END), 0) as harga_kirim,
-			COALESCE(SUM(CASE WHEN %s = CAST(? AS DATE) THEN nota_details.harga_retur ELSE 0 END), 0) as harga_retur
-		FROM nota_details
-		JOIN nota ON nota.id = nota_details.nota_id
-		JOIN tokos ON tokos.id = nota.toko_id
-		JOIN barangs ON barangs.id = nota_details.barang_id
-		WHERE 
-			%s 
-		  AND 
-		    nota.tanggal_kirim >= CAST(? AS DATE) - INTERVAL '30 days'
-		  AND nota.status != 'DIBATALKAN'
-		GROUP BY barangs.id, barangs.nama_barang, tokos.nama_toko, CAST(nota.tanggal_kirim AS DATE), nota.id
-	`, kirimDateExpr, returDateExpr, kirimDateExpr, returDateExpr, siklusFilter)
-
-	err := DB.Raw(query, tanggal, tanggal, tanggal, tanggal, tanggal).Scan(&results).Error
+	startDate, err := time.Parse("2006-01-02", startDateStr)
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return c.Status(400).JSON(fiber.Map{"error": "Format start_date salah"})
 	}
+
+	endDate, err := time.Parse("2006-01-02", endDateStr)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Format end_date salah"})
+	}
+
+	f := excelize.NewFile()
+	isFirstSheet := true
+	hasData := false
 
 	// Ambil semua barang dari database agar yang 0 qty tetap tampil
 	type BarangItem struct {
@@ -156,189 +96,385 @@ func ExportCatatanBesar(c *fiber.Ctx) error {
 		uniqueBarangs = append(uniqueBarangs, b.NamaBarang)
 	}
 
-	// 1. Process data: extract unique stores
-	tokosMap := make(map[string]TokoMeta)
-
-	tokoKirimDates := make(map[string][]string)
-	tokoKirimSet := make(map[string]map[string]bool)
-
-	cellKirimData := make(map[string]int)
-	cellReturData := make(map[string]int)
-
-	kirimTotals := make(map[string]float64)
-	returTotals := make(map[string]float64)
-
-	for _, row := range results {
-		if _, ok := tokosMap[row.NamaToko]; !ok {
-			tokosMap[row.NamaToko] = TokoMeta{NamaToko: row.NamaToko, Siklus: row.Siklus}
+	for d := startDate; !d.After(endDate); d = d.AddDate(0, 0, 1) {
+		dayOfWeek := int(d.Weekday())
+		if dayOfWeek == 0 { // Skip Sunday
+			continue
 		}
 
-		var sortableDateStr string
-		if row.TglAsli != "" && len(row.TglAsli) >= 10 {
-			t, err := time.Parse("2006-01-02T15:04:05Z", row.TglAsli)
-			if err == nil {
-				sortableDateStr = fmt.Sprintf("%s|%010d|%s", t.Format("2006-01-02"), row.NotaId, t.Format("02-01"))
-			} else {
-				t, err = time.Parse("2006-01-02", row.TglAsli[:10])
+		siklusAktif := ""
+		switch dayOfWeek {
+		case 1, 4:
+			siklusAktif = "SiklusKamisSenin"
+		case 2, 5:
+			siklusAktif = "SiklusJumatSelasa"
+		case 3, 6:
+			siklusAktif = "SiklusSabtuRabu"
+		}
+
+		tanggal := d.Format("2006-01-02")
+		
+		siklusFilter := fmt.Sprintf(`(
+			(nota.is_harian_snapshot = true AND '%s' != '') OR 
+			(nota.siklus_snapshot = '%s' AND nota.is_harian_snapshot = false)
+		)`, siklusAktif, siklusAktif)
+
+		var results []CatatanBesarResult
+
+		kirimDateExpr := `CAST(
+			CASE 
+				WHEN nota.siklus_snapshot = 'HARIAN' THEN nota.tanggal_kirim
+				WHEN nota.siklus_snapshot = 'SiklusDua' THEN 
+					CASE 
+						WHEN EXTRACT(DOW FROM nota.tanggal_kirim) IN (1,2,3) THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '1 days'
+						WHEN EXTRACT(DOW FROM nota.tanggal_kirim) IN (4,5,6) THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '4 days'
+						ELSE nota.tanggal_kirim
+					END
+				WHEN nota.siklus_snapshot = 'SiklusKamisSenin' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '3 days'
+				WHEN nota.siklus_snapshot = 'SiklusJumatSelasa' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '4 days'
+				WHEN nota.siklus_snapshot = 'SiklusSabtuRabu' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '5 days'
+				ELSE nota.tanggal_kirim
+			END AS DATE)`
+
+		returDateExpr := `CAST(
+			CASE 
+				WHEN nota.siklus_snapshot = 'HARIAN' THEN 
+					CASE EXTRACT(ISODOW FROM nota.tanggal_kirim)
+						WHEN 1 THEN DATE_TRUNC('week', nota.tanggal_kirim) - INTERVAL '4 days'
+						WHEN 2 THEN DATE_TRUNC('week', nota.tanggal_kirim) - INTERVAL '3 days'
+						WHEN 3 THEN DATE_TRUNC('week', nota.tanggal_kirim) - INTERVAL '2 days'
+						WHEN 4 THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '0 days'
+						WHEN 5 THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '1 days'
+						WHEN 6 THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '2 days'
+						WHEN 7 THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '2 days'
+						ELSE nota.tanggal_kirim
+					END
+				WHEN nota.siklus_snapshot = 'SiklusDua' THEN 
+					CASE 
+						WHEN EXTRACT(DOW FROM nota.tanggal_kirim) IN (1,2,3) THEN DATE_TRUNC('week', nota.tanggal_kirim) - INTERVAL '3 days'
+						WHEN EXTRACT(DOW FROM nota.tanggal_kirim) IN (4,5,6) THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '1 days'
+						ELSE nota.tanggal_kirim
+					END
+				WHEN nota.siklus_snapshot = 'SiklusKamisSenin' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '7 days'
+				WHEN nota.siklus_snapshot = 'SiklusJumatSelasa' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '8 days'
+				WHEN nota.siklus_snapshot = 'SiklusSabtuRabu' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '9 days'
+				ELSE nota.tanggal_kirim + INTERVAL '4 days'
+			END AS DATE)`
+
+		query := fmt.Sprintf(`
+			SELECT 
+				barangs.id as barang_id,
+				barangs.nama_barang, 
+				tokos.nama_toko,
+				MAX(nota.siklus_snapshot) as siklus,
+				bool_or(nota.is_harian_snapshot) as is_harian, 
+				CAST(nota.tanggal_kirim AS DATE) as tgl_asli,
+				nota.id as nota_id,
+				COALESCE(SUM(CASE WHEN %s = CAST(? AS DATE) THEN nota_details.banyak_kirim ELSE 0 END), 0) as qty_kirim, 
+				COALESCE(SUM(CASE WHEN %s = CAST(? AS DATE) THEN nota_details.banyak_retur ELSE 0 END), 0) as qty_retur, 
+				COALESCE(SUM(CASE WHEN %s = CAST(? AS DATE) THEN nota_details.harga_kirim ELSE 0 END), 0) as harga_kirim,
+				COALESCE(SUM(CASE WHEN %s = CAST(? AS DATE) THEN nota_details.harga_retur ELSE 0 END), 0) as harga_retur
+			FROM nota_details
+			JOIN nota ON nota.id = nota_details.nota_id
+			JOIN tokos ON tokos.id = nota.toko_id
+			JOIN barangs ON barangs.id = nota_details.barang_id
+			WHERE 
+				%s 
+			  AND 
+				nota.tanggal_kirim >= CAST(? AS DATE) - INTERVAL '30 days'
+			  AND nota.status != 'DIBATALKAN'
+			GROUP BY barangs.id, barangs.nama_barang, tokos.nama_toko, CAST(nota.tanggal_kirim AS DATE), nota.id
+		`, kirimDateExpr, returDateExpr, kirimDateExpr, returDateExpr, siklusFilter)
+
+		err := DB.Raw(query, tanggal, tanggal, tanggal, tanggal, tanggal).Scan(&results).Error
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+
+		// Calculate "Lalu" Totals (Grand Totals for Kirim and Retur)
+		queryKirimLalu := fmt.Sprintf(`
+			SELECT COALESCE(SUM(nota_details.harga_kirim), 0)
+			FROM nota_details 
+			JOIN nota ON nota.id = nota_details.nota_id
+			WHERE %s >= CAST(? AS DATE) AND %s < CAST(? AS DATE) AND nota.status != 'DIBATALKAN'
+		`, kirimDateExpr, kirimDateExpr)
+		
+		var totalKirimLalu float64
+		DB.Raw(queryKirimLalu, accStartDateStr, tanggal).Scan(&totalKirimLalu)
+
+		queryReturLalu := fmt.Sprintf(`
+			SELECT COALESCE(SUM(nota_details.harga_retur), 0)
+			FROM nota_details 
+			JOIN nota ON nota.id = nota_details.nota_id
+			WHERE %s >= CAST(? AS DATE) AND %s < CAST(? AS DATE) AND nota.status != 'DIBATALKAN'
+		`, returDateExpr, returDateExpr)
+
+		var totalReturLalu float64
+		DB.Raw(queryReturLalu, accStartDateStr, tanggal).Scan(&totalReturLalu)
+
+		if len(results) == 0 && totalKirimLalu == 0 && totalReturLalu == 0 {
+			continue // Skip creating sheet if no data at all
+		}
+
+		hasData = true
+		sheetName := d.Format("01-02")
+		
+		if isFirstSheet {
+			f.SetSheetName("Sheet1", sheetName)
+			isFirstSheet = false
+		} else {
+			f.NewSheet(sheetName)
+		}
+		sheet := sheetName
+
+		// 1. Process data: extract unique stores
+		tokosMap := make(map[string]TokoMeta)
+
+		tokoKirimDates := make(map[string][]string)
+		tokoKirimSet := make(map[string]map[string]bool)
+
+		cellKirimData := make(map[string]int)
+		cellReturData := make(map[string]int)
+
+		kirimTotals := make(map[string]float64)
+		returTotals := make(map[string]float64)
+
+		var totalKirimHariIni float64
+		var totalReturHariIni float64
+
+		for _, row := range results {
+			if _, ok := tokosMap[row.NamaToko]; !ok {
+				tokosMap[row.NamaToko] = TokoMeta{NamaToko: row.NamaToko, Siklus: row.Siklus}
+			}
+
+			var sortableDateStr string
+			if row.TglAsli != "" && len(row.TglAsli) >= 10 {
+				t, err := time.Parse("2006-01-02T15:04:05Z", row.TglAsli)
 				if err == nil {
 					sortableDateStr = fmt.Sprintf("%s|%010d|%s", t.Format("2006-01-02"), row.NotaId, t.Format("02-01"))
 				} else {
-					sortableDateStr = fmt.Sprintf("%s|%010d|%s", row.TglAsli[:10], row.NotaId, row.TglAsli[8:10]+"-"+row.TglAsli[5:7])
+					t, err = time.Parse("2006-01-02", row.TglAsli[:10])
+					if err == nil {
+						sortableDateStr = fmt.Sprintf("%s|%010d|%s", t.Format("2006-01-02"), row.NotaId, t.Format("02-01"))
+					} else {
+						sortableDateStr = fmt.Sprintf("%s|%010d|%s", row.TglAsli[:10], row.NotaId, row.TglAsli[8:10]+"-"+row.TglAsli[5:7])
+					}
 				}
 			}
-		}
 
-		if row.QtyKirim > 0 && sortableDateStr != "" {
-			if tokoKirimSet[row.NamaToko] == nil {
-				tokoKirimSet[row.NamaToko] = make(map[string]bool)
+			if row.QtyKirim > 0 && sortableDateStr != "" {
+				if tokoKirimSet[row.NamaToko] == nil {
+					tokoKirimSet[row.NamaToko] = make(map[string]bool)
+				}
+				if !tokoKirimSet[row.NamaToko][sortableDateStr] {
+					tokoKirimSet[row.NamaToko][sortableDateStr] = true
+					tokoKirimDates[row.NamaToko] = append(tokoKirimDates[row.NamaToko], sortableDateStr)
+				}
 			}
-			if !tokoKirimSet[row.NamaToko][sortableDateStr] {
-				tokoKirimSet[row.NamaToko][sortableDateStr] = true
-				tokoKirimDates[row.NamaToko] = append(tokoKirimDates[row.NamaToko], sortableDateStr)
-			}
-		}
 
-		if row.QtyKirim > 0 {
-			kKey := row.NamaToko + "-" + row.NamaBarang + "-" + sortableDateStr
-			cellKirimData[kKey] += row.QtyKirim
-		}
-		
-		if row.QtyRetur > 0 {
-			rKey := row.NamaToko + "-" + row.NamaBarang
-			cellReturData[rKey] += row.QtyRetur
-		}
-
-		if sortableDateStr != "" {
-			kKey := row.NamaToko + "-" + sortableDateStr
-			kirimTotals[kKey] += row.HargaKirim
-		}
-		
-		returTotals[row.NamaToko] += row.HargaRetur
-	}
-
-	for toko, dates := range tokoKirimDates {
-		sort.Strings(dates)
-		tokoKirimDates[toko] = dates
-	}
-
-	var filteredTokos []TokoMeta
-	for _, t := range tokosMap {
-		filteredTokos = append(filteredTokos, t)
-	}
-
-	sort.Slice(filteredTokos, func(i, j int) bool {
-		pA := getSiklusPriority(filteredTokos[i].Siklus)
-		pB := getSiklusPriority(filteredTokos[j].Siklus)
-		if pA != pB {
-			return pA < pB
-		}
-		return strings.Compare(filteredTokos[i].NamaToko, filteredTokos[j].NamaToko) < 0
-	})
-
-	// 2. Generate Excel
-	f := excelize.NewFile()
-	sheet := "Sheet1"
-	f.SetSheetName(sheet, "Catatan Besar")
-	sheet = "Catatan Besar"
-
-	// Title
-	titleText := fmt.Sprintf("Catatan Besar Tiara %s", formatIndonesianDate(tanggal))
-	f.SetCellValue(sheet, "A1", titleText)
-	titleStyle, _ := f.NewStyle(&excelize.Style{
-		Font: &excelize.Font{Bold: true, Size: 16},
-	})
-	f.SetCellStyle(sheet, "A1", "A1", titleStyle)
-
-	headerStyle, _ := f.NewStyle(&excelize.Style{
-		Fill: excelize.Fill{Type: "pattern", Color: []string{"#e2e8f0"}, Pattern: 1},
-		Font: &excelize.Font{Bold: true},
-		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
-		Border: []excelize.Border{
-			{Type: "left", Color: "#000000", Style: 1},
-			{Type: "top", Color: "#000000", Style: 1},
-			{Type: "bottom", Color: "#000000", Style: 1},
-			{Type: "right", Color: "#000000", Style: 1},
-		},
-	})
-
-	cellBorder, _ := f.NewStyle(&excelize.Style{
-		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
-		Border: []excelize.Border{
-			{Type: "left", Color: "#000000", Style: 1},
-			{Type: "top", Color: "#000000", Style: 1},
-			{Type: "bottom", Color: "#000000", Style: 1},
-			{Type: "right", Color: "#000000", Style: 1},
-		},
-	})
-
-	currencyStyle, _ := f.NewStyle(&excelize.Style{
-		NumFmt: 3, // #,##0
-		Font:   &excelize.Font{Bold: true},
-		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
-		Border: []excelize.Border{
-			{Type: "left", Color: "#000000", Style: 1},
-			{Type: "top", Color: "#000000", Style: 1},
-			{Type: "bottom", Color: "#000000", Style: 1},
-			{Type: "right", Color: "#000000", Style: 1},
-		},
-	})
-
-	// Headers
-	f.SetCellValue(sheet, "A2", "Nama Produk Barang")
-	f.MergeCell(sheet, "A2", "A3")
-	f.SetCellStyle(sheet, "A2", "A3", headerStyle)
-	f.SetColWidth(sheet, "A", "A", 30)
-
-	colIndex := 2 // B
-	for _, toko := range filteredTokos {
-		kirimDates := tokoKirimDates[toko.NamaToko]
-		if len(kirimDates) == 0 {
-			kirimDates = []string{"Kirim"}
-		}
-		numCols := len(kirimDates) + 1 // +1 for Retur
-
-		startColName, _ := excelize.ColumnNumberToName(colIndex)
-		endColName, _ := excelize.ColumnNumberToName(colIndex + numCols - 1)
-		
-		f.SetCellValue(sheet, startColName+"2", toko.NamaToko)
-		if numCols > 1 {
-			f.MergeCell(sheet, startColName+"2", endColName+"2")
-		}
-		f.SetCellStyle(sheet, startColName+"2", endColName+"2", headerStyle)
-
-		currCol := colIndex
-		for _, compositeDate := range kirimDates {
-			colName, _ := excelize.ColumnNumberToName(currCol)
-			
-			parts := strings.Split(compositeDate, "|")
-			displayDate := ""
-			if len(parts) == 3 {
-				displayDate = parts[2]
+			if row.QtyKirim > 0 {
+				kKey := row.NamaToko + "-" + row.NamaBarang + "-" + sortableDateStr
+				cellKirimData[kKey] += row.QtyKirim
 			}
 			
-			headerText := "K"
-			if displayDate != "Kirim" && displayDate != "" {
-				headerText = fmt.Sprintf("K %s", displayDate)
+			if row.QtyRetur > 0 {
+				rKey := row.NamaToko + "-" + row.NamaBarang
+				cellReturData[rKey] += row.QtyRetur
 			}
-			f.SetCellValue(sheet, colName+"3", headerText)
-			f.SetCellStyle(sheet, colName+"3", colName+"3", headerStyle)
-			f.SetColWidth(sheet, colName, colName, 10)
-			currCol++
+
+			if sortableDateStr != "" {
+				kKey := row.NamaToko + "-" + sortableDateStr
+				kirimTotals[kKey] += row.HargaKirim
+			}
+			
+			returTotals[row.NamaToko] += row.HargaRetur
+
+			totalKirimHariIni += row.HargaKirim
+			totalReturHariIni += row.HargaRetur
 		}
 
-		returColName, _ := excelize.ColumnNumberToName(currCol)
-		f.SetCellValue(sheet, returColName+"3", "Retur")
-		f.SetCellStyle(sheet, returColName+"3", returColName+"3", headerStyle)
-		f.SetColWidth(sheet, returColName, returColName, 10)
+		for toko, dates := range tokoKirimDates {
+			sort.Strings(dates)
+			tokoKirimDates[toko] = dates
+		}
 
-		colIndex += numCols
-	}
+		var filteredTokos []TokoMeta
+		for _, t := range tokosMap {
+			filteredTokos = append(filteredTokos, t)
+		}
 
-	// Data
-	rowIndex := 4
-	for _, barang := range uniqueBarangs {
-		f.SetCellValue(sheet, fmt.Sprintf("A%d", rowIndex), barang)
-		f.SetCellStyle(sheet, fmt.Sprintf("A%d", rowIndex), fmt.Sprintf("A%d", rowIndex), cellBorder)
+		sort.Slice(filteredTokos, func(i, j int) bool {
+			pA := getSiklusPriority(filteredTokos[i].Siklus)
+			pB := getSiklusPriority(filteredTokos[j].Siklus)
+			if pA != pB {
+				return pA < pB
+			}
+			return strings.Compare(filteredTokos[i].NamaToko, filteredTokos[j].NamaToko) < 0
+		})
+
+		// Title
+		titleText := fmt.Sprintf("Catatan Besar Tiara %s", formatIndonesianDate(tanggal))
+		f.SetCellValue(sheet, "A1", titleText)
+		titleStyle, _ := f.NewStyle(&excelize.Style{
+			Font: &excelize.Font{Bold: true, Size: 16},
+		})
+		f.SetCellStyle(sheet, "A1", "A1", titleStyle)
+
+		// Base Styles
+		headerStyle, _ := f.NewStyle(&excelize.Style{
+			Fill: excelize.Fill{Type: "pattern", Color: []string{"#e2e8f0"}, Pattern: 1},
+			Font: &excelize.Font{Bold: true},
+			Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
+			Border: []excelize.Border{
+				{Type: "left", Color: "#000000", Style: 1},
+				{Type: "top", Color: "#000000", Style: 1},
+				{Type: "bottom", Color: "#000000", Style: 1},
+				{Type: "right", Color: "#000000", Style: 1},
+			},
+		})
+		
+		cellBorder, _ := f.NewStyle(&excelize.Style{
+			Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
+			Border: []excelize.Border{
+				{Type: "left", Color: "#000000", Style: 1},
+				{Type: "top", Color: "#000000", Style: 1},
+				{Type: "bottom", Color: "#000000", Style: 1},
+				{Type: "right", Color: "#000000", Style: 1},
+			},
+		})
+		
+		redCellBorder, _ := f.NewStyle(&excelize.Style{
+			Font: &excelize.Font{Color: "#DC2626"},
+			Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
+			Border: []excelize.Border{
+				{Type: "left", Color: "#000000", Style: 1},
+				{Type: "top", Color: "#000000", Style: 1},
+				{Type: "bottom", Color: "#000000", Style: 1},
+				{Type: "right", Color: "#000000", Style: 1},
+			},
+		})
+
+		currencyStyle, _ := f.NewStyle(&excelize.Style{
+			NumFmt: 3, // #,##0
+			Font:   &excelize.Font{Bold: true},
+			Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
+			Border: []excelize.Border{
+				{Type: "left", Color: "#000000", Style: 1},
+				{Type: "top", Color: "#000000", Style: 1},
+				{Type: "bottom", Color: "#000000", Style: 1},
+				{Type: "right", Color: "#000000", Style: 1},
+			},
+		})
+
+		redCurrencyStyle, _ := f.NewStyle(&excelize.Style{
+			NumFmt: 3, // #,##0
+			Font:   &excelize.Font{Bold: true, Color: "#DC2626"},
+			Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
+			Border: []excelize.Border{
+				{Type: "left", Color: "#000000", Style: 1},
+				{Type: "top", Color: "#000000", Style: 1},
+				{Type: "bottom", Color: "#000000", Style: 1},
+				{Type: "right", Color: "#000000", Style: 1},
+			},
+		})
+
+		// Headers
+		f.SetCellValue(sheet, "A2", "Nama Produk Barang")
+		f.MergeCell(sheet, "A2", "A3")
+		f.SetCellStyle(sheet, "A2", "A3", headerStyle)
+		f.SetColWidth(sheet, "A", "A", 30)
+
+		colIndex := 2 // B
+		for _, toko := range filteredTokos {
+			kirimDates := tokoKirimDates[toko.NamaToko]
+			if len(kirimDates) == 0 {
+				kirimDates = []string{"Kirim"}
+			}
+			numCols := len(kirimDates) + 1 // +1 for Retur
+
+			startColName, _ := excelize.ColumnNumberToName(colIndex)
+			endColName, _ := excelize.ColumnNumberToName(colIndex + numCols - 1)
+			
+			f.SetCellValue(sheet, startColName+"2", toko.NamaToko)
+			if numCols > 1 {
+				f.MergeCell(sheet, startColName+"2", endColName+"2")
+			}
+			f.SetCellStyle(sheet, startColName+"2", endColName+"2", headerStyle)
+
+			currCol := colIndex
+			for _, compositeDate := range kirimDates {
+				colName, _ := excelize.ColumnNumberToName(currCol)
+				
+				parts := strings.Split(compositeDate, "|")
+				displayDate := ""
+				if len(parts) == 3 {
+					displayDate = parts[2]
+				}
+				
+				headerText := "K"
+				if displayDate != "Kirim" && displayDate != "" {
+					headerText = fmt.Sprintf("K %s", displayDate)
+				}
+				f.SetCellValue(sheet, colName+"3", headerText)
+				f.SetCellStyle(sheet, colName+"3", colName+"3", headerStyle)
+				f.SetColWidth(sheet, colName, colName, 10)
+				currCol++
+			}
+
+			returColName, _ := excelize.ColumnNumberToName(currCol)
+			f.SetCellValue(sheet, returColName+"3", "Retur")
+			f.SetCellStyle(sheet, returColName+"3", returColName+"3", headerStyle)
+			f.SetColWidth(sheet, returColName, returColName, 10)
+
+			colIndex += numCols
+		}
+
+		// Data
+		rowIndex := 4
+		for _, barang := range uniqueBarangs {
+			f.SetCellValue(sheet, fmt.Sprintf("A%d", rowIndex), barang)
+			f.SetCellStyle(sheet, fmt.Sprintf("A%d", rowIndex), fmt.Sprintf("A%d", rowIndex), cellBorder)
+
+			colIdx := 2
+			for _, toko := range filteredTokos {
+				kirimDates := tokoKirimDates[toko.NamaToko]
+				if len(kirimDates) == 0 {
+					kirimDates = []string{"Kirim"}
+				}
+
+				for _, dateStr := range kirimDates {
+					key := toko.NamaToko + "-" + barang + "-" + dateStr
+					qtyKirim := cellKirimData[key]
+					
+					colName, _ := excelize.ColumnNumberToName(colIdx)
+					var val interface{} = ""
+					if qtyKirim > 0 { val = qtyKirim }
+					f.SetCellValue(sheet, fmt.Sprintf("%s%d", colName, rowIndex), val)
+					f.SetCellStyle(sheet, fmt.Sprintf("%s%d", colName, rowIndex), fmt.Sprintf("%s%d", colName, rowIndex), cellBorder)
+					colIdx++
+				}
+
+				keyRetur := toko.NamaToko + "-" + barang
+				qtyRetur := cellReturData[keyRetur]
+				returColName, _ := excelize.ColumnNumberToName(colIdx)
+				var val interface{} = ""
+				if qtyRetur > 0 { val = qtyRetur }
+				f.SetCellValue(sheet, fmt.Sprintf("%s%d", returColName, rowIndex), val)
+				f.SetCellStyle(sheet, fmt.Sprintf("%s%d", returColName, rowIndex), fmt.Sprintf("%s%d", returColName, rowIndex), redCellBorder)
+				colIdx++
+			}
+			rowIndex++
+		}
+
+		// Footer
+		totalRow1 := rowIndex
+		totalRow2 := rowIndex + 1
+		totalRow3 := rowIndex + 2
+
+		f.SetCellValue(sheet, fmt.Sprintf("A%d", totalRow1), "Subtotal Kirim (Rp)")
+		f.SetCellValue(sheet, fmt.Sprintf("A%d", totalRow2), "Total Kirim (Rp)")
+		f.SetCellValue(sheet, fmt.Sprintf("A%d", totalRow3), "Total Retur (Rp)")
+		f.SetCellStyle(sheet, fmt.Sprintf("A%d", totalRow1), fmt.Sprintf("A%d", totalRow3), headerStyle)
 
 		colIdx := 2
 		for _, toko := range filteredTokos {
@@ -346,91 +482,133 @@ func ExportCatatanBesar(c *fiber.Ctx) error {
 			if len(kirimDates) == 0 {
 				kirimDates = []string{"Kirim"}
 			}
+			numCols := len(kirimDates) + 1
 
-			for _, dateStr := range kirimDates {
-				key := toko.NamaToko + "-" + barang + "-" + dateStr
-				qtyKirim := cellKirimData[key]
+			startColName, _ := excelize.ColumnNumberToName(colIdx)
+			endColName, _ := excelize.ColumnNumberToName(colIdx + numCols - 1)
+
+			var combinedKirim float64
+			currCol := colIdx
+			for _, compositeDate := range kirimDates {
+				colName, _ := excelize.ColumnNumberToName(currCol)
 				
-				colName, _ := excelize.ColumnNumberToName(colIdx)
-				var val interface{} = ""
-				if qtyKirim > 0 { val = qtyKirim }
-				f.SetCellValue(sheet, fmt.Sprintf("%s%d", colName, rowIndex), val)
-				f.SetCellStyle(sheet, fmt.Sprintf("%s%d", colName, rowIndex), fmt.Sprintf("%s%d", colName, rowIndex), cellBorder)
-				colIdx++
+				kTotal := kirimTotals[toko.NamaToko+"-"+compositeDate]
+				combinedKirim += kTotal
+				f.SetCellValue(sheet, fmt.Sprintf("%s%d", colName, totalRow1), kTotal)
+				f.SetCellStyle(sheet, fmt.Sprintf("%s%d", colName, totalRow1), fmt.Sprintf("%s%d", colName, totalRow1), currencyStyle)
+				
+				currCol++
 			}
 
-			keyRetur := toko.NamaToko + "-" + barang
-			qtyRetur := cellReturData[keyRetur]
-			returColName, _ := excelize.ColumnNumberToName(colIdx)
-			var val interface{} = ""
-			if qtyRetur > 0 { val = qtyRetur }
-			f.SetCellValue(sheet, fmt.Sprintf("%s%d", returColName, rowIndex), val)
-			f.SetCellStyle(sheet, fmt.Sprintf("%s%d", returColName, rowIndex), fmt.Sprintf("%s%d", returColName, rowIndex), cellBorder)
-			colIdx++
+			returColName, _ := excelize.ColumnNumberToName(currCol)
+			
+			// Row 1: Blank for Retur column under Subtotal Kirim
+			f.SetCellValue(sheet, fmt.Sprintf("%s%d", returColName, totalRow1), "")
+			f.SetCellStyle(sheet, fmt.Sprintf("%s%d", returColName, totalRow1), fmt.Sprintf("%s%d", returColName, totalRow1), redCurrencyStyle)
+
+			// Row 2: Total Kirim Keseluruhan (di-merge)
+			if numCols > 1 {
+				f.MergeCell(sheet, fmt.Sprintf("%s%d", startColName, totalRow2), fmt.Sprintf("%s%d", endColName, totalRow2))
+			}
+			f.SetCellValue(sheet, fmt.Sprintf("%s%d", startColName, totalRow2), combinedKirim)
+			f.SetCellStyle(sheet, fmt.Sprintf("%s%d", startColName, totalRow2), fmt.Sprintf("%s%d", endColName, totalRow2), currencyStyle)
+
+			// Row 3: Total Retur (di-merge)
+			if numCols > 1 {
+				f.MergeCell(sheet, fmt.Sprintf("%s%d", startColName, totalRow3), fmt.Sprintf("%s%d", endColName, totalRow3))
+			}
+			rTotal := returTotals[toko.NamaToko]
+			f.SetCellValue(sheet, fmt.Sprintf("%s%d", startColName, totalRow3), rTotal)
+			f.SetCellStyle(sheet, fmt.Sprintf("%s%d", startColName, totalRow3), fmt.Sprintf("%s%d", endColName, totalRow3), redCurrencyStyle)
+
+			colIdx += numCols
 		}
-		rowIndex++
+
+		// Query Pesanan Data for Accumulation
+		queryPesananHariIni := `
+			SELECT COALESCE(SUM(nota_pesanan_details.subtotal), 0)
+			FROM nota_pesanan_details
+			JOIN nota_pesanans ON nota_pesanans.id = nota_pesanan_details.nota_pesanan_id
+			WHERE DATE(nota_pesanans.tanggal_kirim) = ? AND nota_pesanans.status != 'DIBATALKAN'
+		`
+		var pesananHariIni float64
+		DB.Raw(queryPesananHariIni, d.Format("2006-01-02")).Scan(&pesananHariIni)
+
+		queryPesananLalu := `
+			SELECT COALESCE(SUM(nota_pesanan_details.subtotal), 0)
+			FROM nota_pesanan_details
+			JOIN nota_pesanans ON nota_pesanans.id = nota_pesanan_details.nota_pesanan_id
+			WHERE DATE(nota_pesanans.tanggal_kirim) >= ? AND DATE(nota_pesanans.tanggal_kirim) < ? AND nota_pesanans.status != 'DIBATALKAN'
+		`
+		var pesananLalu float64
+		DB.Raw(queryPesananLalu, accStartDateStr, d.Format("2006-01-02")).Scan(&pesananLalu)
+
+		pesananTotal := pesananHariIni + pesananLalu
+
+		// Render Accumulation Table (attached directly after the last store)
+		accLabelCol, _ := excelize.ColumnNumberToName(colIndex)
+		accValCol, _ := excelize.ColumnNumberToName(colIndex + 1)
+
+		f.SetColWidth(sheet, accLabelCol, accLabelCol, 10)
+		f.SetColWidth(sheet, accValCol, accValCol, 10)
+
+		accRow := totalRow3 - 7
+		if accRow < 4 {
+			accRow = 4
+		}
+
+		// Pesanan Block (4 rows)
+		f.SetCellValue(sheet, fmt.Sprintf("%s%d", accLabelCol, accRow), "Pesanan")
+		f.MergeCell(sheet, fmt.Sprintf("%s%d", accLabelCol, accRow), fmt.Sprintf("%s%d", accValCol, accRow))
+		f.SetCellStyle(sheet, fmt.Sprintf("%s%d", accLabelCol, accRow), fmt.Sprintf("%s%d", accValCol, accRow), headerStyle)
+		accRow++
+
+		f.SetCellValue(sheet, fmt.Sprintf("%s%d", accLabelCol, accRow), pesananHariIni)
+		f.MergeCell(sheet, fmt.Sprintf("%s%d", accLabelCol, accRow), fmt.Sprintf("%s%d", accValCol, accRow))
+		f.SetCellStyle(sheet, fmt.Sprintf("%s%d", accLabelCol, accRow), fmt.Sprintf("%s%d", accValCol, accRow), currencyStyle)
+		accRow++
+
+		f.SetCellValue(sheet, fmt.Sprintf("%s%d", accLabelCol, accRow), pesananLalu)
+		f.MergeCell(sheet, fmt.Sprintf("%s%d", accLabelCol, accRow), fmt.Sprintf("%s%d", accValCol, accRow))
+		f.SetCellStyle(sheet, fmt.Sprintf("%s%d", accLabelCol, accRow), fmt.Sprintf("%s%d", accValCol, accRow), currencyStyle)
+		accRow++
+
+		f.SetCellValue(sheet, fmt.Sprintf("%s%d", accLabelCol, accRow), pesananTotal)
+		f.MergeCell(sheet, fmt.Sprintf("%s%d", accLabelCol, accRow), fmt.Sprintf("%s%d", accValCol, accRow))
+		f.SetCellStyle(sheet, fmt.Sprintf("%s%d", accLabelCol, accRow), fmt.Sprintf("%s%d", accValCol, accRow), currencyStyle)
+		accRow++
+
+		// Kirim & Retur Block (4 rows)
+		f.SetCellValue(sheet, fmt.Sprintf("%s%d", accLabelCol, accRow), "Kirim")
+		f.SetCellValue(sheet, fmt.Sprintf("%s%d", accValCol, accRow), "Retur")
+		f.SetCellStyle(sheet, fmt.Sprintf("%s%d", accLabelCol, accRow), fmt.Sprintf("%s%d", accValCol, accRow), headerStyle)
+		accRow++
+
+		f.SetCellValue(sheet, fmt.Sprintf("%s%d", accLabelCol, accRow), totalKirimHariIni)
+		f.SetCellValue(sheet, fmt.Sprintf("%s%d", accValCol, accRow), totalReturHariIni)
+		f.SetCellStyle(sheet, fmt.Sprintf("%s%d", accLabelCol, accRow), fmt.Sprintf("%s%d", accLabelCol, accRow), currencyStyle)
+		f.SetCellStyle(sheet, fmt.Sprintf("%s%d", accValCol, accRow), fmt.Sprintf("%s%d", accValCol, accRow), redCurrencyStyle)
+		accRow++
+
+		f.SetCellValue(sheet, fmt.Sprintf("%s%d", accLabelCol, accRow), totalKirimLalu)
+		f.SetCellValue(sheet, fmt.Sprintf("%s%d", accValCol, accRow), totalReturLalu)
+		f.SetCellStyle(sheet, fmt.Sprintf("%s%d", accLabelCol, accRow), fmt.Sprintf("%s%d", accLabelCol, accRow), currencyStyle)
+		f.SetCellStyle(sheet, fmt.Sprintf("%s%d", accValCol, accRow), fmt.Sprintf("%s%d", accValCol, accRow), redCurrencyStyle)
+		accRow++
+
+		f.SetCellValue(sheet, fmt.Sprintf("%s%d", accLabelCol, accRow), totalKirimHariIni + totalKirimLalu)
+		f.SetCellValue(sheet, fmt.Sprintf("%s%d", accValCol, accRow), totalReturHariIni + totalReturLalu)
+		f.SetCellStyle(sheet, fmt.Sprintf("%s%d", accLabelCol, accRow), fmt.Sprintf("%s%d", accLabelCol, accRow), currencyStyle)
+		f.SetCellStyle(sheet, fmt.Sprintf("%s%d", accValCol, accRow), fmt.Sprintf("%s%d", accValCol, accRow), redCurrencyStyle)
 	}
 
-	// Footer
-	totalRow1 := rowIndex
-	totalRow2 := rowIndex + 1
-	totalRow3 := rowIndex + 2
-
-	f.SetCellValue(sheet, fmt.Sprintf("A%d", totalRow1), "Subtotal Kirim (Rp)")
-	f.SetCellValue(sheet, fmt.Sprintf("A%d", totalRow2), "Total Kirim (Rp)")
-	f.SetCellValue(sheet, fmt.Sprintf("A%d", totalRow3), "Total Retur (Rp)")
-	f.SetCellStyle(sheet, fmt.Sprintf("A%d", totalRow1), fmt.Sprintf("A%d", totalRow3), headerStyle)
-
-	colIdx := 2
-	for _, toko := range filteredTokos {
-		kirimDates := tokoKirimDates[toko.NamaToko]
-		if len(kirimDates) == 0 {
-			kirimDates = []string{"Kirim"}
-		}
-		numCols := len(kirimDates) + 1
-
-		startColName, _ := excelize.ColumnNumberToName(colIdx)
-		endColName, _ := excelize.ColumnNumberToName(colIdx + numCols - 1)
-
-		var combinedKirim float64
-		currCol := colIdx
-		for _, compositeDate := range kirimDates {
-			colName, _ := excelize.ColumnNumberToName(currCol)
-			
-			kTotal := kirimTotals[toko.NamaToko+"-"+compositeDate]
-			combinedKirim += kTotal
-			f.SetCellValue(sheet, fmt.Sprintf("%s%d", colName, totalRow1), kTotal)
-			f.SetCellStyle(sheet, fmt.Sprintf("%s%d", colName, totalRow1), fmt.Sprintf("%s%d", colName, totalRow1), currencyStyle)
-			
-			currCol++
-		}
-
-		returColName, _ := excelize.ColumnNumberToName(currCol)
-		
-		// Row 1: Blank for Retur column under Subtotal Kirim
-		f.SetCellValue(sheet, fmt.Sprintf("%s%d", returColName, totalRow1), "")
-		f.SetCellStyle(sheet, fmt.Sprintf("%s%d", returColName, totalRow1), fmt.Sprintf("%s%d", returColName, totalRow1), currencyStyle)
-
-		// Row 2: Total Kirim Keseluruhan (di-merge)
-		if numCols > 1 {
-			f.MergeCell(sheet, fmt.Sprintf("%s%d", startColName, totalRow2), fmt.Sprintf("%s%d", endColName, totalRow2))
-		}
-		f.SetCellValue(sheet, fmt.Sprintf("%s%d", startColName, totalRow2), combinedKirim)
-		f.SetCellStyle(sheet, fmt.Sprintf("%s%d", startColName, totalRow2), fmt.Sprintf("%s%d", endColName, totalRow2), currencyStyle)
-
-		// Row 3: Total Retur (di-merge)
-		if numCols > 1 {
-			f.MergeCell(sheet, fmt.Sprintf("%s%d", startColName, totalRow3), fmt.Sprintf("%s%d", endColName, totalRow3))
-		}
-		rTotal := returTotals[toko.NamaToko]
-		f.SetCellValue(sheet, fmt.Sprintf("%s%d", startColName, totalRow3), rTotal)
-		f.SetCellStyle(sheet, fmt.Sprintf("%s%d", startColName, totalRow3), fmt.Sprintf("%s%d", endColName, totalRow3), currencyStyle)
-
-		colIdx += numCols
+	if !hasData {
+		f.SetSheetName("Sheet1", "Kosong")
+		f.SetCellValue("Kosong", "A1", "Tidak ada data pada rentang tanggal tersebut")
 	}
 
 	c.Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=Catatan_Besar_%s.xlsx", tanggal))
+	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=Catatan_Besar_%s_to_%s.xlsx", startDateStr, endDateStr))
 
 	if err := f.Write(c.Response().BodyWriter()); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Gagal menulis file Excel"})
