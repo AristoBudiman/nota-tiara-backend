@@ -103,21 +103,25 @@ func ExportCatatanBesar(c *fiber.Ctx) error {
 		}
 
 		siklusAktif := ""
+		siklusCondition := ""
 		switch dayOfWeek {
 		case 1, 4:
 			siklusAktif = "SiklusKamisSenin"
+			siklusCondition = "'SiklusKamisSenin'"
 		case 2, 5:
 			siklusAktif = "SiklusJumatSelasa"
+			siklusCondition = "'SiklusJumatSelasa', 'SiklusDua'"
 		case 3, 6:
 			siklusAktif = "SiklusSabtuRabu"
+			siklusCondition = "'SiklusSabtuRabu'"
 		}
 
 		tanggal := d.Format("2006-01-02")
 		
 		siklusFilter := fmt.Sprintf(`(
 			(nota.is_harian_snapshot = true AND '%s' != '') OR 
-			(nota.siklus_snapshot = '%s' AND nota.is_harian_snapshot = false)
-		)`, siklusAktif, siklusAktif)
+			(nota.siklus_snapshot IN (%s) AND nota.is_harian_snapshot = false)
+		)`, siklusAktif, siklusCondition)
 
 		var results []CatatanBesarResult
 
@@ -524,27 +528,6 @@ func ExportCatatanBesar(c *fiber.Ctx) error {
 			colIdx += numCols
 		}
 
-		// Query Pesanan Data for Accumulation
-		queryPesananHariIni := `
-			SELECT COALESCE(SUM(nota_pesanan_details.subtotal), 0)
-			FROM nota_pesanan_details
-			JOIN nota_pesanans ON nota_pesanans.id = nota_pesanan_details.nota_pesanan_id
-			WHERE DATE(nota_pesanans.tanggal_kirim) = ? AND nota_pesanans.status != 'DIBATALKAN'
-		`
-		var pesananHariIni float64
-		DB.Raw(queryPesananHariIni, d.Format("2006-01-02")).Scan(&pesananHariIni)
-
-		queryPesananLalu := `
-			SELECT COALESCE(SUM(nota_pesanan_details.subtotal), 0)
-			FROM nota_pesanan_details
-			JOIN nota_pesanans ON nota_pesanans.id = nota_pesanan_details.nota_pesanan_id
-			WHERE DATE(nota_pesanans.tanggal_kirim) >= ? AND DATE(nota_pesanans.tanggal_kirim) < ? AND nota_pesanans.status != 'DIBATALKAN'
-		`
-		var pesananLalu float64
-		DB.Raw(queryPesananLalu, accStartDateStr, d.Format("2006-01-02")).Scan(&pesananLalu)
-
-		pesananTotal := pesananHariIni + pesananLalu
-
 		// Render Accumulation Table (attached directly after the last store)
 		accLabelCol, _ := excelize.ColumnNumberToName(colIndex)
 		accValCol, _ := excelize.ColumnNumberToName(colIndex + 1)
@@ -552,31 +535,10 @@ func ExportCatatanBesar(c *fiber.Ctx) error {
 		f.SetColWidth(sheet, accLabelCol, accLabelCol, 10)
 		f.SetColWidth(sheet, accValCol, accValCol, 10)
 
-		accRow := totalRow3 - 7
+		accRow := totalRow3 - 3
 		if accRow < 4 {
 			accRow = 4
 		}
-
-		// Pesanan Block (4 rows)
-		f.SetCellValue(sheet, fmt.Sprintf("%s%d", accLabelCol, accRow), "Pesanan")
-		f.MergeCell(sheet, fmt.Sprintf("%s%d", accLabelCol, accRow), fmt.Sprintf("%s%d", accValCol, accRow))
-		f.SetCellStyle(sheet, fmt.Sprintf("%s%d", accLabelCol, accRow), fmt.Sprintf("%s%d", accValCol, accRow), headerStyle)
-		accRow++
-
-		f.SetCellValue(sheet, fmt.Sprintf("%s%d", accLabelCol, accRow), pesananHariIni)
-		f.MergeCell(sheet, fmt.Sprintf("%s%d", accLabelCol, accRow), fmt.Sprintf("%s%d", accValCol, accRow))
-		f.SetCellStyle(sheet, fmt.Sprintf("%s%d", accLabelCol, accRow), fmt.Sprintf("%s%d", accValCol, accRow), currencyStyle)
-		accRow++
-
-		f.SetCellValue(sheet, fmt.Sprintf("%s%d", accLabelCol, accRow), pesananLalu)
-		f.MergeCell(sheet, fmt.Sprintf("%s%d", accLabelCol, accRow), fmt.Sprintf("%s%d", accValCol, accRow))
-		f.SetCellStyle(sheet, fmt.Sprintf("%s%d", accLabelCol, accRow), fmt.Sprintf("%s%d", accValCol, accRow), currencyStyle)
-		accRow++
-
-		f.SetCellValue(sheet, fmt.Sprintf("%s%d", accLabelCol, accRow), pesananTotal)
-		f.MergeCell(sheet, fmt.Sprintf("%s%d", accLabelCol, accRow), fmt.Sprintf("%s%d", accValCol, accRow))
-		f.SetCellStyle(sheet, fmt.Sprintf("%s%d", accLabelCol, accRow), fmt.Sprintf("%s%d", accValCol, accRow), currencyStyle)
-		accRow++
 
 		// Kirim & Retur Block (4 rows)
 		f.SetCellValue(sheet, fmt.Sprintf("%s%d", accLabelCol, accRow), "Kirim")
