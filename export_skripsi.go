@@ -54,13 +54,17 @@ func ExportSkripsi(c *fiber.Ctx) error {
 		}
 
 		siklusAktif := ""
+		siklusCondition := ""
 		switch dayOfWeek {
 		case 1, 4:
 			siklusAktif = "SiklusKamisSenin"
+			siklusCondition = "'SiklusKamisSenin'"
 		case 2, 5:
 			siklusAktif = "SiklusJumatSelasa"
+			siklusCondition = "'SiklusJumatSelasa', 'SiklusDua'"
 		case 3, 6:
 			siklusAktif = "SiklusSabtuRabu"
+			siklusCondition = "'SiklusSabtuRabu'"
 		}
 
 		// Run query for this day
@@ -68,8 +72,8 @@ func ExportSkripsi(c *fiber.Ctx) error {
 		
 		siklusFilter := fmt.Sprintf(`(
 			(nota.is_harian_snapshot = true AND '%s' != '') OR 
-			(nota.siklus_snapshot = '%s' AND nota.is_harian_snapshot = false)
-		)`, siklusAktif, siklusAktif)
+			(nota.siklus_snapshot IN (%s) AND nota.is_harian_snapshot = false)
+		)`, siklusAktif, siklusCondition)
 
 		kirimDateExpr := `CAST(
 			CASE 
