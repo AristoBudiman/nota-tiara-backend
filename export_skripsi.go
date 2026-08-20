@@ -80,8 +80,8 @@ func ExportSkripsi(c *fiber.Ctx) error {
 				WHEN nota.siklus_snapshot = 'HARIAN' THEN nota.tanggal_kirim
 				WHEN nota.siklus_snapshot = 'SiklusDua' THEN 
 					CASE 
-						WHEN EXTRACT(DOW FROM nota.tanggal_kirim) IN (1,2,3) THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '3 days'
-						WHEN EXTRACT(DOW FROM nota.tanggal_kirim) IN (4,5,6) THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '7 days'
+						WHEN EXTRACT(DOW FROM nota.tanggal_kirim) IN (1,2,3) THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '1 days'
+						WHEN EXTRACT(DOW FROM nota.tanggal_kirim) IN (4,5,6) THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '4 days'
 						ELSE nota.tanggal_kirim
 					END
 				WHEN nota.siklus_snapshot = 'SiklusKamisSenin' THEN DATE_TRUNC('week', nota.tanggal_kirim) + INTERVAL '3 days'
