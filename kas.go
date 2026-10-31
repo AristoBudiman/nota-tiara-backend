@@ -289,9 +289,18 @@ func GetAnalisisAsetLive(c *fiber.Ctx) error {
 	}
 
 	// 2. TOTAL PIUTANG (Masih hutang dan dibuat sebelum/pada tanggal target ATAU lunas tapi setelah tanggal target)
+	// Logika Pendekatan A: Menganggap retur diinput saat pelunasan/update.
+	// Jika pelunasan atau update retur terjadi setelah targetDate, maka pada targetDate retur belum ada (tambahkan kembali retur ke piutang).
 	var piutangReguler, piutangPO float64
 	targetDateAkhirMain := targetDate + " 23:59:59"
-	DB.Model(&models.Nota{}).Where("(is_lunas = false OR (is_lunas = true AND tanggal_lunas > ?)) AND status != 'DIBATALKAN' AND tanggal_kirim <= ?", targetDateAkhirMain, targetDateAkhirMain).Select("COALESCE(SUM(total_bayar), 0)").Row().Scan(&piutangReguler)
+	queryPiutangReguler := `COALESCE(SUM(
+		CASE 
+			WHEN (is_lunas = true AND tanggal_lunas > ?) OR (is_lunas = false AND updated_at > ? AND jumlah_retur > 0)
+			THEN (total_bayar + jumlah_retur)
+			ELSE total_bayar
+		END
+	), 0)`
+	DB.Model(&models.Nota{}).Where("(is_lunas = false OR (is_lunas = true AND tanggal_lunas > ?)) AND status != 'DIBATALKAN' AND tanggal_kirim <= ?", targetDateAkhirMain, targetDateAkhirMain).Select(queryPiutangReguler, targetDateAkhirMain, targetDateAkhirMain).Row().Scan(&piutangReguler)
 	DB.Model(&models.NotaPesanan{}).Where("(is_lunas = false OR (is_lunas = true AND tanggal_lunas > ?)) AND status != 'DIBATALKAN' AND tanggal_kirim <= ?", targetDateAkhirMain, targetDateAkhirMain).Select("COALESCE(SUM(sisa_tagihan), 0)").Row().Scan(&piutangPO)
 	piutangLive := piutangReguler + piutangPO
 
@@ -362,6 +371,9 @@ func GetRincianAset(c *fiber.Ctx) error {
 	// 1. Piutang Reguler
 	var notas []models.Nota
 	targetDateAkhirRincian := targetDate + " 23:59:59"
+	locWIB := time.FixedZone("WIB", 7*3600)
+	targetTimeRincian, _ := time.ParseInLocation("2006-01-02 15:04:05", targetDateAkhirRincian, locWIB)
+
 	DB.Preload("Toko").Where("(is_lunas = false OR (is_lunas = true AND tanggal_lunas > ?)) AND status != 'DIBATALKAN' AND tanggal_kirim <= ?", targetDateAkhirRincian, targetDateAkhirRincian).Find(&notas)
 	for _, n := range notas {
 		mitra := ""
@@ -372,9 +384,15 @@ func GetRincianAset(c *fiber.Ctx) error {
 		if n.TanggalLunas != nil {
 			tglLunas = n.TanggalLunas.Format("2006-01-02")
 		}
+
+		nominal := n.TotalBayar
+		if (n.IsLunas && n.TanggalLunas != nil && n.TanggalLunas.After(targetTimeRincian)) || (!n.IsLunas && n.UpdatedAt.After(targetTimeRincian) && n.JumlahRetur > 0) {
+			nominal = n.TotalBayar + n.JumlahRetur
+		}
+
 		piutang = append(piutang, RincianItem{
 			Jenis: "REGULER", NoNota: n.NoNota, Mitra: mitra, 
-			Tanggal: n.TanggalKirim.Format("2006-01-02"), TanggalLunas: tglLunas, Nominal: n.TotalBayar,
+			Tanggal: n.TanggalKirim.Format("2006-01-02"), TanggalLunas: tglLunas, Nominal: nominal,
 		})
 	}
 
@@ -523,7 +541,15 @@ func SimpanSnapshotAset(c *fiber.Ctx) error {
 	DB.Model(&models.TransaksiKas{}).Where("jenis = 'KELUAR' AND DATE(tanggal) <= ?", tglStr).Select("COALESCE(SUM(nominal), 0)").Row().Scan(&kK)
 
 	// 2. PIUTANG (Nota/PO yang dibuat s/d tanggal snapshot dan belum lunas ATAU lunas tapi setelah tanggal snapshot)
-	DB.Model(&models.Nota{}).Where("(is_lunas = false OR (is_lunas = true AND DATE(tanggal_lunas) > ?)) AND status != 'DIBATALKAN' AND tanggal_kirim <= ?", tglStr, tglStr).Select("COALESCE(SUM(total_bayar), 0)").Row().Scan(&pR)
+	tglAkhirSnapshot := tglStr + " 23:59:59"
+	querySnapshotPiutangReguler := `COALESCE(SUM(
+		CASE 
+			WHEN (is_lunas = true AND tanggal_lunas > ?) OR (is_lunas = false AND updated_at > ? AND jumlah_retur > 0)
+			THEN (total_bayar + jumlah_retur)
+			ELSE total_bayar
+		END
+	), 0)`
+	DB.Model(&models.Nota{}).Where("(is_lunas = false OR (is_lunas = true AND tanggal_lunas > ?)) AND status != 'DIBATALKAN' AND tanggal_kirim <= ?", tglAkhirSnapshot, tglAkhirSnapshot).Select(querySnapshotPiutangReguler, tglAkhirSnapshot, tglAkhirSnapshot).Row().Scan(&pR)
 	DB.Model(&models.NotaPesanan{}).Where("(is_lunas = false OR (is_lunas = true AND DATE(tanggal_lunas) > ?)) AND status != 'DIBATALKAN' AND tanggal_kirim <= ?", tglStr, tglStr).Select("COALESCE(SUM(sisa_tagihan), 0)").Row().Scan(&pPO)
 
 	// 3. HUTANG (Pembelian s/d tanggal snapshot yang belum lunas ATAU lunas tapi setelah tanggal snapshot)
